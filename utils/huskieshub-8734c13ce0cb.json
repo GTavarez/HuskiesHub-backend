@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "huskieshub",
+  "private_key_id": "8734c13ce0cbc747e28fe6febe26d13f20735e7e",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCw5IifbMIX1ah6\nTSzGVwyUH3kIFudjJUVCsXxwJX4/PbzcPQFZ7jCwbeqgLfbOHrX9RQA691MUoF6x\nqccjObs5+NEmJdDDKwJ5MVR/btUFCZk5eFyI17K0mpaxi8vyeTVUhP5EF5m1BLBW\n9wOEpDCn8bhBnl9M0GakwUF4dT9vaq2esWDLHMB5R0/yU8awtvGGl+JASSMJI0hO\n8VSWpJRoDHpTdhNErjXglZ7ae7E/VsomSNx0Lke4DfOW4acON4xNjDVM8FgzAMCG\n1TSJVofijyAoIjCHIKmOGQyDU2VAPiaDlhNfY6gXZgZlzfZvaPkoqkYVdUi+glrG\nENErHeP7AgMBAAECggEAAjRhO89sHmqkM/hLQxAgh8qjMipBxLbraf1N3RTN+Mfy\nRNb88dLFNdyOjIhfQwFg1kVzhhHBLfZqkNq1npTXZnI0x2JKjf5tlq2Df7mn9rZS\nssO8VBLZRNLRQmjI+pC4ljfdP6y36Oi2jQ3GD4XIn3Tt1piqWBw8hYptDhrq1tWN\nJSlq3RvXEgOvHhiQP3tM1bvc1aekh47PxUiLyuwz6S2gc9aVhXj/II4Z0Pz0mJ7m\nte+nUeK1fG7Q1fUJgXhTEh9bSzsn5JDawVUfw10I1/KVnTaEJAOrREC7DjItsMFu\n/7eCYRrxWolHapM0w/tMMs4/r7uPjjgGiecj5mc61QKBgQDhmZOVEm5Gy0d3a2oJ\nr62Yjur17e7BMbUtxNgfv09qZ2ffdRuF60GN1ngz2JS06AUSidyGDHNGDz0XLkLb\nM5DIR1CYK8g8as1BSOsGJA+D4U/SJRxPCqNgQwpwetSomgngDJ28GzIl1x1UnTgA\nJp41VEJYX+NCXek9wtgN2R9ejQKBgQDIurnOPjQMsthKad1W/i2guxm0WQJdQaQW\ntC1UzDrdxBLBOqr9RMFWzUL6xhwhH0MPwaa19vp+HIJJWYxzQ9BCWch08GPpRhM/\ng3FwN/BsZyeqq2zL/BzMTnA74T5ooKh0Cwmu8cBl6kwRRE4UzoO9jR5dsmdJXMRO\ntnGql0mOpwKBgHC0jeNqmscpZSHG+umt55cQx1dnr+C6mZ4s+iAaLm2lDWK4mbB0\n0IIwxEp6iAg85dPWJeKeM7SrhkSfau0hvNIhtqTfMqDkZniYGjouJ8Yl+P+uZI8k\nbGx58awx4S3+DrLs+pxwJcR7zH5qMQD6Sg2wc5i9BscwLYcaYV/Bugc9AoGAGijj\noDJRHDqOn5wOYZD8p07a+bsD6N1uIhtXMQ7wuQgdnZskv58fR0225fG9pr9pQPtu\n25YVbSwP+rk16auzz4Hd8weFLdiZF5TsysAvkCEddUukAS2ZHzM1w0gGlyIg8gai\nO298MIwJX9K0DlgfqStkArgGZ/Q0DUIPrDjNOE8CgYEAqXOQE/nX707ENSUSs44+\nb4uOlAG89/skU3mfGp/TBwBbRpzv62VqNQyfiEdMisiFuuVu07XJ2RmqLT6FsaqB\nU1AGEiM8CpepB+Dit4tIGIgsCEXi6XVMLGtCocehfrh+VvifbaM9wir7eXubrVGM\ndgE/oEMRksjw5you3lswxwY=\n-----END PRIVATE KEY-----\n",
+  "client_email": "huskies-calendar-service@huskieshub.iam.gserviceaccount.com",
+  "client_id": "106368354286561893328",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/huskies-calendar-service%40huskieshub.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
