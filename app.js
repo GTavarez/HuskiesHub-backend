@@ -1,6 +1,6 @@
 require("dotenv").config();
 const { PORT = 3001 } = process.env;
-
+const scheduleRoutes = require("./routes/schedule.js");
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
@@ -16,7 +16,7 @@ connectDB();
 
 // routes
 app.use("/", authRoutes);
-
+app.use("/api", scheduleRoutes);
 /* // Define a simple route
 app.get("/", (req, res) => {
   res.send("Welcome to the Softball Team API");
