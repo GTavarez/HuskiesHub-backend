@@ -5,7 +5,7 @@ require("dotenv").config();
 
 // ✅ Authenticate using Service Account (no popups, backend only)
 const auth = new google.auth.GoogleAuth({
-  keyFile: path.join(__dirname, "../utils/huskieshub-8734c13ce0cb.json"), // ✅ correct path
+  keyFile: path.join(__dirname, "../secrets/huskieshub-f7165f06c11d.json"), // ✅ correct path
   scopes: ["https://www.googleapis.com/auth/calendar.readonly"], // ✅ read-only
 });
 
