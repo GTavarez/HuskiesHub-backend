@@ -3,41 +3,6 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/auth.js");
 const { JWT_SECRET } = require("../utils/config.js");
 
-/* const signup = async (req, res) => {
-  const { name, email, password, confirmPassword } = req.body;
-
-  return bcrypt
-    .hash(password, 10)
-    .then((hashedPassword) => {
-      return User.create({
-        name,
-        email,
-        password: hashedPassword,
-        confirmPassword: hashedPassword,
-      });
-    })
-    .then((user) => {
-      const token = jwt.sign({ _id: user._id }, JWT_SECRET, {
-        expiresIn: "7d",
-      });
-      res.status(201).send({
-        token,
-        user: {
-          name: user.name,
-          email: user.email,
-          _id: user._id,
-        },
-      });
-    })
-    .catch((error) => {
-      console.error(error);
-      if (error.code === 11000) {
-        res.status(409).send({ message: "Email already in use" });
-      } else {
-        res.status(500).send({ message: "server failed" });
-      }
-    });
-}; */
 const signup = async (req, res) => {
   try {
     const { name, email, password, confirmPassword } = req.body;
@@ -102,9 +67,58 @@ const signin = (req, res) => {
       res.status(401).send({ message: error.message });
     });
 };
+const updateUserProfile = async (req, res) => {
+  const { name, avatar } = req.body;
+  const { _id: userId } = req.user;
+
+  try {
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { name, avatar },
+      { new: true, runValidators: true }
+    ).orFail();
+
+    res.status(200).send({
+      user: {
+        _id: updatedUser._id,
+        name: updatedUser.name,
+        avatar: updatedUser.avatar,
+      },
+    });
+  } catch (err) {
+    console.error("Profile update error:", err);
+    res.status(500).send({ message: "Internal server error" });
+  }
+};
+const uploadAvatar = async (req, res) => {
+  const { _id: userId } = req.user;
+
+  if (!req.file) {
+    return res.status(400).send({ message: "No file uploaded" });
+  }
+
+  const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+
+  try {
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { avatar: avatarUrl },
+      { new: true, runValidators: true }
+    ).orFail();
+
+    res.status(200).send({
+      avatar: updatedUser.avatar,
+    });
+  } catch (err) {
+    console.error("Avatar upload error:", err);
+    res.status(500).send({ message: "Internal server error" });
+  }
+};
 
 module.exports = {
   signup,
   signin,
   getCurrentUser,
+  updateUserProfile,
+  uploadAvatar,
 };
