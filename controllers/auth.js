@@ -82,6 +82,7 @@ const updateUserProfile = async (req, res) => {
       user: {
         _id: updatedUser._id,
         name: updatedUser.name,
+        email: updatedUser.email,
         avatar: updatedUser.avatar,
       },
     });
