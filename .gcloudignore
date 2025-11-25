@@ -1,0 +1,7 @@
+# Include everything unless explicitly excluded
+!**/*.json
+!secrets/huskieshub-f7165f06c11d.json
+
+# Optional excludes (safe)
+node_modules
+.git

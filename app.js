@@ -1,27 +1,58 @@
 require("dotenv").config();
-const { PORT = 3001 } = process.env;
-const scheduleRoutes = require("./routes/schedule.js");
 const express = require("express");
+const mongoose = require("mongoose");
 const cors = require("cors");
-const dotenv = require("dotenv");
+
 const connectDB = require("./db");
 const authRoutes = require("./routes/auth");
-const { default: mongoose } = require("mongoose");
+const scheduleRoutes = require("./routes/schedule");
+
 const app = express();
-app.use(cors());
+const { PORT = 8080 } = process.env;
+
+// ---------------------------
+// 🌟 CRITICAL: CLOUD RUN CORS
+// ---------------------------
+
+const FRONTEND_URL = "https://huskieshub-frontend-891073803869.us-central1.run.app";
+
+// Preflight handler (Cloud Run requires this)
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", FRONTEND_URL);
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+
+  if (req.method === "OPTIONS") {
+    return res.status(204).send(""); // Must send empty 204 response
+  }
+
+  next();
+});
+
+// Backup CORS middleware (for non-preflight requests)
+app.use(cors({
+  origin: FRONTEND_URL,
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE"]
+}));
+
 app.use(express.json());
 
-// Connect to MongoDB
+// ---------------------------
+// Connect DB
+// ---------------------------
 connectDB();
 
-// routes
+// ---------------------------
+// Routes
+// ---------------------------
 app.use("/", authRoutes);
 app.use("/api", scheduleRoutes);
-/* // Define a simple route
-app.get("/", (req, res) => {
-  res.send("Welcome to the Softball Team API");
-}); */
 
+// ---------------------------
+// Start server
+// ---------------------------
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server is listening on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });

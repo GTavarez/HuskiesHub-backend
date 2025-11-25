@@ -19,7 +19,6 @@ const signup = async (req, res) => {
       name,
       email,
       password: hashedPassword,
-      confirmPassword: hashedPassword,
     });
 
     // Generate JWT
