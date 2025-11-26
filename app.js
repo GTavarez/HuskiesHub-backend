@@ -54,7 +54,7 @@ connectDB();
 // ---------------------------
 app.use("/", authRoutes);
 app.use("/api", scheduleRoutes);
-
+app.use("/uploads/avatars/", express.static("uploads/avatars/"));
 // ---------------------------
 // Start server
 // ---------------------------

@@ -28,6 +28,10 @@ const userSchema = new mongoose.Schema({
     required: true,
     select: false,
   },
+  avatar: {
+    type: String,
+    default: "",
+  },
 });
 
 // ⭐ LOGIN CHECK

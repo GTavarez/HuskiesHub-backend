@@ -2,6 +2,8 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/auth.js");
 const { JWT_SECRET } = require("../utils/config.js");
+const multer = require("multer");
+const upload = multer({ dest: "uploads/avatars/" });
 
 const signup = async (req, res) => {
   try {
@@ -66,6 +68,7 @@ const getCurrentUser = async (req, res) => {
       _id: user._id,
       name: user.name,
       email: user.email,
+      avatar: user.avatar,
     });
   } catch (err) {
     console.error("Get current user error:", err);
@@ -112,7 +115,7 @@ const uploadAvatar = async (req, res) => {
       { avatar: avatarUrl },
       { new: true, runValidators: true }
     ).orFail();
-
+    console.log(updatedUser);
     res.status(200).send({
       avatar: updatedUser.avatar,
     });
