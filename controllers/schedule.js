@@ -25,8 +25,7 @@ const getSchedule = async (req, res) => {
     const response = await calendar.events.list({
       calendarId,
       auth: authClient,
-      timeMin: new Date().toISOString(),
-      maxResults: 20,
+      maxResults: 50,
       singleEvents: true,
       orderBy: "startTime",
     });

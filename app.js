@@ -14,14 +14,17 @@ const { PORT = 8080 } = process.env;
 // 🌟 CRITICAL: CLOUD RUN CORS
 // ---------------------------
 
-const FRONTEND_URL = "https://huskieshub-frontend-891073803869.us-central1.run.app";
+const FRONTEND_URL = "http://localhost:5173";
 
 // Preflight handler (Cloud Run requires this)
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", FRONTEND_URL);
   res.header("Access-Control-Allow-Credentials", "true");
   res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+  res.header(
+    "Access-Control-Allow-Methods",
+    "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+  );
 
   if (req.method === "OPTIONS") {
     return res.status(204).send(""); // Must send empty 204 response
@@ -31,11 +34,13 @@ app.use((req, res, next) => {
 });
 
 // Backup CORS middleware (for non-preflight requests)
-app.use(cors({
-  origin: FRONTEND_URL,
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE"]
-}));
+app.use(
+  cors({
+    origin: FRONTEND_URL,
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+  })
+);
 
 app.use(express.json());
 
