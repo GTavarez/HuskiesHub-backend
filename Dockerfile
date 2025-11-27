@@ -1,17 +1,15 @@
 FROM node:18
 
-WORKDIR /usr/src/app
+WORKDIR /app
 
 COPY package*.json ./
-RUN npm install
+
+RUN npm install --omit=dev
 
 COPY . .
 
-# 🔥 REMOVE .env so Cloud Run env vars are used
-RUN rm -f .env
-
-EXPOSE 8080
 ENV PORT=8080
 
-CMD ["npm", "start"]
+EXPOSE 8080
 
+CMD ["node", "app.js"]
