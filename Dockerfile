@@ -1,8 +1,9 @@
-FROM node:18
-WORKDIR /app
+FROM node:22
+WORKDIR /
 COPY package*.json ./
 RUN npm install --omit=dev
-COPY . .
+COPY app.js controllers/ routes/ models/ middlewares/ utils/ uploads/ ./
+
 
 ARG CACHEBUST=1
 

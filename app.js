@@ -1,8 +1,6 @@
 require("dotenv").config();
 const express = require("express");
-const mongoose = require("mongoose");
 const cors = require("cors");
-
 const connectDB = require("./db");
 const authRoutes = require("./routes/auth");
 const scheduleRoutes = require("./routes/schedule");
@@ -14,10 +12,11 @@ const { PORT = 8080 } = process.env;
 // ⭐ Allowed Domains
 // --------------------------------------------
 const ALLOWED_ORIGINS = [
+  "http://localhost:5174",
   "http://localhost:5173",
   "https://www.eshuskiesyoffee.com",
   "http://eshuskiesyoffee.com",
-  "https://huskieshub-frontend-891073803869.us-central1.run.app",
+  "https://huskieshub-frontend-891073803869-us-central1.run.app",
 ];
 
 // --------------------------------------------
