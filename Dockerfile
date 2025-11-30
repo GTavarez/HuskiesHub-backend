@@ -1,12 +1,18 @@
 FROM node:22
-WORKDIR /
+
+# Set working directory
+WORKDIR /app
+
+# Install dependencies first
 COPY package*.json ./
 RUN npm install --omit=dev
-COPY app.js controllers/ routes/ models/ middlewares/ utils/ uploads/ ./
 
+# Copy everything else (including db.js)
+COPY . .
 
-ARG CACHEBUST=1
-
+ENV NODE_ENV=production
 ENV PORT=8080
+
 EXPOSE 8080
+
 CMD ["node", "app.js"]
