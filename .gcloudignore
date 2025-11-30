@@ -8,6 +8,3 @@ npm-debug.log
 .env
 secrets/*
 !secrets/huskieshub-f7165f06c11d.json
-
-# Do NOT ignore Dockerfile or backend source
-# Important: ensure everything else is INCLUDED.
