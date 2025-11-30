@@ -25,7 +25,33 @@ function requireAdmin(req, res, next) {
 
   next();
 }
+exports.getImage = async (req, res) => {
+  try {
+    const bucket = getBucket();
+    const filename = req.params.filename;
 
+    // Lookup metadata to get contentType
+    bucket.find({ filename }).toArray((err, files) => {
+      if (!files || files.length === 0) {
+        return res.status(404).json({ message: "Image not found" });
+      }
+
+      const file = files[0];
+
+      // 👇 VERY IMPORTANT: set MIME type before piping
+      res.set("Content-Type", file.contentType || "image/jpeg");
+
+      const readStream = bucket.openDownloadStreamByName(filename);
+      readStream.on("error", () =>
+        res.status(404).json({ message: "Not found" })
+      );
+      readStream.pipe(res);
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
 /**
  * POST /images?slug=as
  * Headers: x-admin-secret: <your secret>
