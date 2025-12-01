@@ -1,43 +1,60 @@
 // controllers/schedule.js
 const { google } = require("googleapis");
-const path = require("path");
 require("dotenv").config();
 
-const auth = new google.auth.GoogleAuth({
-  keyFile: path.join(__dirname, "../secrets/huskieshub-f7165f06c11d.json"),
-  scopes: ["https://www.googleapis.com/auth/calendar.readonly"],
-});
+// --- Service Account Auth (Environment Variables) ---
+const jwtClient = new google.auth.JWT(
+  process.env.GOOGLE_CLIENT_EMAIL,
+  null,
+  process.env.GOOGLE_PRIVATE_KEY
+    ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n")
+    : undefined,
+  ["https://www.googleapis.com/auth/calendar.readonly"]
+);
 
-const calendar = google.calendar({ version: "v3", auth });
+const calendar = google.calendar({ version: "v3", auth: jwtClient });
 
+// --- MAIN CONTROLLER ---
 const getSchedule = async (req, res) => {
   try {
-    const authClient = await auth.getClient();
-
-    // ✅ FIX — Use CALENDAR_ID from Cloud Run
-    const calendarId = process.env.GOOGLE_CALENDAR_ID;
-
+    const calendarId = process.env.CALENDAR_ID;
     if (!calendarId) {
-      console.error("❌ CALENDAR_ID is missing from environment variables");
+      console.error("❌ Missing CALENDAR_ID from env");
       return res.status(500).json({ message: "Missing calendar ID" });
     }
 
-    const response = await calendar.events.list({
+    // 🔥 The ONLY place where await is allowed
+    const { data } = await calendar.events.list({
       calendarId,
-      auth: authClient,
-      timeMin: new Date().toISOString(),
-      maxResults: 20,
       singleEvents: true,
       orderBy: "startTime",
+      maxResults: 100,
+      timeMin: "2000-01-01T00:00:00.000Z",
     });
 
-    res.status(200).json(response.data.items);
+    const events = (data.items || []).map((event) => {
+      const start =
+        event.start?.dateTime || event.start?.date || null;
+
+      const end =
+        event.end?.dateTime || event.end?.date || null;
+
+      return {
+        id: event.id,
+        title: event.summary || "TBD",
+        start,
+        end,
+        location: event.location || "Location TBA",
+      };
+    });
+
+    return res.status(200).json(events);
   } catch (err) {
     console.error(
       "❌ Google Calendar API Error:",
       err.response?.data || err.message
     );
-    res.status(500).json({ message: "Error fetching calendar events" });
+    return res.status(500).json({ message: "Google Calendar error" });
   }
 };
 
