@@ -1,0 +1,13 @@
+//Ignore node_modules and git
+node_modules
+.git
+.gitignore
+npm-debug.log
+
+//Ignore secrets from repo (Cloud Run gets them as env variables)
+.env
+secrets/*
+!secrets/huskieshub-f7165f06c11d.json
+
+# Do NOT ignore Dockerfile or backend source
+# Important: ensure everything else is INCLUDED.
