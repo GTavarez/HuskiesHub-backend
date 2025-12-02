@@ -1,0 +1,6 @@
+CALENDAR_ID=57b06b6e6d6013009c38fa18a7e42bd1cab5a1cb14036c5d40fb90ee8576d203@group.calendar.google.com
+MONGO_URI=mongodb+srv://giselltavarez_db_user:HuskiesHub2025Secure@cluster0.szlbc9g.mongodb.net/huskieshub?retryWrites=true&w=majority&authSource=admin&appName=Cluster0
+ADMIN_SECRET=SomeLongRandomSecret
+JWT_SECRET=SuperSecretJWTValue
+GOOGLE_CLIENT_EMAIL=huskies-calendar-service@huskieshub.iam.gserviceaccount.com
+GOOGLE_APPLICATION_CREDENTIALS=/secrets/huskieshub-service-key

@@ -1,28 +1,22 @@
-// Load env ONLY in development
-if (process.env.NODE_ENV !== "production") {
-  require("dotenv").config();
-}
-
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+const { connectDB } = require("./db");
 
+// Routes
 const authRoutes = require("./routes/auth");
 const scheduleRoutes = require("./routes/schedule");
 const adminRoutes = require("./routes/admin");
 const imagesRoutes = require("./routes/images");
-const { connectDB } = require("./db");
+const uploadsRoutes = require("./routes/uploads");
 
 const app = express();
-const { PORT = 8080 } = process.env;
+const PORT = process.env.PORT || 8080;
 
-// ----------------------------------------------------------
-//                 CORS CONFIG (SAFE FOR PRODUCTION)
-// ----------------------------------------------------------
-
-// ----------------------------------------------------------
-//                  FIXED GLOBAL CORS MIDDLEWARE
-// ----------------------------------------------------------
+// ----------------------------------------
+// CORS CONFIG
+// ----------------------------------------
 
 const ALLOWED_ORIGINS = [
   "http://localhost:5173",
@@ -34,7 +28,6 @@ const ALLOWED_ORIGINS = [
 app.use((req, res, next) => {
   const origin = req.headers.origin;
 
-  // ⭐ If request is for IMAGES — special CORS rules (no credentials)
   if (req.path.startsWith("/images")) {
     if (origin && ALLOWED_ORIGINS.includes(origin)) {
       res.setHeader("Access-Control-Allow-Origin", origin);
@@ -42,11 +35,9 @@ app.use((req, res, next) => {
     }
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
     res.setHeader("Access-Control-Allow-Methods", "GET");
-    // ⭐ DO NOT SEND ALLOW-CREDENTIALS — CORB fix
     return next();
   }
 
-  // ⭐ All other endpoints
   if (origin && ALLOWED_ORIGINS.includes(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
@@ -65,49 +56,41 @@ app.use((req, res, next) => {
   );
 
   if (req.method === "OPTIONS") return res.sendStatus(204);
-
   next();
 });
 
-// ----------------------------------------------------------
-//                    STATIC FILES
-// ----------------------------------------------------------
+// ----------------------------------------
+// STATIC FILES
+// ----------------------------------------
 app.use(
   "/uploads/avatars",
-  express.static(path.join(__dirname, "uploads", "avatars"))
+  express.static(path.join(__dirname, "uploads/avatars"))
 );
+app.use("/players", express.static(path.join(__dirname, "uploads/players")));
 
-app.use("/players", express.static(path.join(__dirname, "uploads", "players")));
-
-// ----------------------------------------------------------
-//                    BODY PARSERS
-// ----------------------------------------------------------
+// ----------------------------------------
+// BODY PARSERS
+// ----------------------------------------
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ----------------------------------------------------------
-//                    ROUTES
-// ----------------------------------------------------------
-function mountRoutes() {
-  app.use("/", authRoutes);
-  app.use("/api", scheduleRoutes);
+// ----------------------------------------
+// ROUTES
+// ----------------------------------------
+app.use("/", authRoutes);
+app.use("/api", scheduleRoutes);
+app.use("/admin", adminRoutes);
+app.use("/images", imagesRoutes);
+app.use("/api", uploadsRoutes);
 
-  // 🚨 MUST COME BEFORE JSON PARSING OR MULTER BREAKS
-  app.use("/admin", adminRoutes);
-
-  // GridFS GET route
-  app.use("/images", imagesRoutes);
-}
-
-// ----------------------------------------------------------
-//                    START SERVER
-// ----------------------------------------------------------
+// ----------------------------------------
+// START SERVER
+// ----------------------------------------
 async function start() {
   console.log("⏳ Connecting to MongoDB...");
   await connectDB();
 
-  console.log("✅ Mongo connected — mounting routes");
-  mountRoutes();
+  console.log("✅ Mongo connected — starting server");
 
   app.listen(PORT, "0.0.0.0", () =>
     console.log(`🚀 Server running on port ${PORT}`)
