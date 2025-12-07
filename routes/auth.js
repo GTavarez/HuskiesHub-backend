@@ -1,4 +1,6 @@
 const router = require("express").Router();
+const multer = require("multer");
+const path = require("path");
 const {
   signup,
   signin,
@@ -7,8 +9,7 @@ const {
   uploadAvatar,
 } = require("../controllers/auth");
 const auth = require("../middlewares/auth");
-const multer = require("multer");
-const path = require("path");
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, "uploads/avatars/"); // folder where files will be saved

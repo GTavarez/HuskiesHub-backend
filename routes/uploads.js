@@ -6,7 +6,7 @@ const router = express.Router();
 
 router.get("/uploads/:id", async (req, res) => {
   try {
-    const bucket = getBucket();  // ⭐ use your initialized bucket
+    const bucket = getBucket(); // ⭐ use your initialized bucket
 
     if (!bucket) {
       console.error("GridFS bucket not ready yet");
@@ -16,16 +16,15 @@ router.get("/uploads/:id", async (req, res) => {
     const fileId = new ObjectId(req.params.id);
     const downloadStream = bucket.openDownloadStream(fileId);
 
-    downloadStream.on("error", () => {
-      return res.status(404).json({ message: "File not found" });
-    });
+    downloadStream.on("error", () =>
+      res.status(404).json({ message: "File not found" })
+    );
 
     res.set("Content-Type", "image/jpeg");
-    downloadStream.pipe(res);
-
+    return downloadStream.pipe(res);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Error retrieving image" });
+    return res.status(500).json({ message: "Error retrieving image" });
   }
 });
 

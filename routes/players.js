@@ -11,7 +11,7 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const safeName = file.originalname.toLowerCase().replace(/\s+/g, "-");
-    cb(null, Date.now() + "-" + safeName);
+    cb(null, `${Date.now()  }-${  safeName}`);
   },
 });
 
@@ -33,7 +33,7 @@ router.post(
       return res.status(400).json({ message: "No file uploaded" });
     }
 
-    const filename = req.file.filename;
+    const {filename} = req.file;
     const relativeUrl = `/players/${filename}`;
     const fullUrl = `${req.protocol}://${req.get("host")}${relativeUrl}`;
 

@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 
-let bucket = null;
+const bucket = null;
 
 /* mongoose.connection.on("connected", () => {
   bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {

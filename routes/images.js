@@ -23,12 +23,12 @@ function requireAdmin(req, res, next) {
     return res.status(403).send({ message: "Forbidden" });
   }
 
-  next();
+  return next();
 }
 exports.getImage = async (req, res) => {
   try {
     const bucket = getBucket();
-    const filename = req.params.filename;
+    const { filename } = req.params;
 
     // Lookup metadata to get contentType
     bucket.find({ filename }).toArray((err, files) => {
@@ -45,7 +45,7 @@ exports.getImage = async (req, res) => {
       readStream.on("error", () =>
         res.status(404).json({ message: "Not found" })
       );
-      readStream.pipe(res);
+      return readStream.pipe(res);
     });
   } catch (err) {
     console.error(err);
@@ -97,7 +97,7 @@ router.post("/", requireAdmin, upload.single("file"), async (req, res) => {
       res.status(500).send({ message: "Error uploading file" });
     });
 
-    uploadStream.on("finish", (file) => {
+    return uploadStream.on("finish", (file) => {
       if (!file) {
         console.error("❌ GridFS upload finished but 'file' is undefined");
         return res
@@ -105,7 +105,7 @@ router.post("/", requireAdmin, upload.single("file"), async (req, res) => {
           .json({ message: "Upload failed — no file returned" });
       }
 
-      res.status(201).json({
+      return res.status(201).json({
         message: "Image uploaded",
         slug: file.filename,
         id: file._id,
@@ -113,7 +113,7 @@ router.post("/", requireAdmin, upload.single("file"), async (req, res) => {
     });
   } catch (err) {
     console.error("Upload route error:", err);
-    res.status(500).send({ message: "Internal server error" });
+    return res.status(500).send({ message: "Internal server error" });
   }
 });
 
@@ -123,7 +123,7 @@ router.post("/", requireAdmin, upload.single("file"), async (req, res) => {
  */
 router.get("/:slug", async (req, res) => {
   try {
-    const slug = req.params.slug;
+    const { slug } = req.params;
     const bucket = getBucket();
 
     const files = await bucket.find({ filename: slug }).toArray();
@@ -133,11 +133,7 @@ router.get("/:slug", async (req, res) => {
 
     const file = files[0];
 
-    if (file.contentType) {
-      res.set("Content-Type", file.contentType);
-    } else {
-      res.set("Content-Type", "image/jpeg");
-    }
+    res.set("Content-Type", file.contentType || "image/jpeg");
 
     const downloadStream = bucket.openDownloadStreamByName(slug);
 
@@ -148,12 +144,15 @@ router.get("/:slug", async (req, res) => {
       }
     });
 
-    downloadStream.pipe(res);
+    return downloadStream.pipe(res);
   } catch (err) {
     console.error("GET /images/:slug error:", err);
+
     if (!res.headersSent) {
-      res.status(500).send({ message: "Internal server error" });
+      return res.status(500).send({ message: "Internal server error" });
     }
+
+    return null; // ⭐ ADDED TO SATISFY ESLINT
   }
 });
 

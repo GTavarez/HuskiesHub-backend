@@ -17,5 +17,5 @@ module.exports = function adminUpload(req, res, next) {
       .json({ message: "Forbidden: invalid admin secret." });
   }
 
-  next();
+  return next();
 };

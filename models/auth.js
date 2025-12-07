@@ -5,7 +5,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
 // ⭐ Use Cloud Run environment variable
-const JWT_SECRET = process.env.JWT_SECRET;
+const {JWT_SECRET} = process.env;
 
 const userSchema = new mongoose.Schema({
   name: {

@@ -8,7 +8,7 @@ const requireAdmin = (req, res, next) => {
   if (req.headers["x-admin-secret"] !== process.env.ADMIN_SECRET) {
     return res.status(401).json({ message: "Unauthorized" });
   }
-  next();
+ return next();
 };
 
 // multer memory upload
@@ -22,7 +22,7 @@ router.post("/", requireAdmin, upload.single("file"), async (req, res) => {
       return res.status(400).json({ message: "No file received" });
     }
 
-    const slug = req.query.slug;
+    const {slug} = req.query;
     if (!slug) {
       return res.status(400).json({ message: "Missing slug" });
     }
@@ -43,14 +43,14 @@ router.post("/", requireAdmin, upload.single("file"), async (req, res) => {
       res.json({ message: "Uploaded", filename: `${slug}.jpg` });
     });
 
-    uploadStream.on("error", (err) => {
+    return uploadStream.on("error", (err) => {
       console.error("Upload error:", err);
       res.status(500).json({ message: "Upload failed" });
     });
 
   } catch (err) {
     console.error("❌ Upload handler error:", err);
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 

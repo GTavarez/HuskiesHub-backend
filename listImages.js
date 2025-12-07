@@ -12,7 +12,7 @@ async function main() {
 
     console.log("✅ Connected to MongoDB");
 
-    const db = mongoose.connection.db;
+    const {db} = mongoose.connection;
 
     // If your bucket is called "images", this is correct:
     const files = await db.collection("images.files").find().toArray();
