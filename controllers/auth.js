@@ -49,7 +49,16 @@ const signin = async (req, res) => {
 
     const token = user.generateAuthToken(); // ⭐ use model method
 
-    res.status(200).send({ token });
+    res.status(200).send({
+      token,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        teamId: user.teamId,
+      },
+    });
   } catch (error) {
     res.status(401).send({ message: error.message });
   }
@@ -67,6 +76,8 @@ const getCurrentUser = async (req, res) => {
       name: user.name,
       email: user.email,
       avatar: user.avatar,
+      teamId: user.teamId,
+      role: user.role,
     });
   } catch (err) {
     console.error("Get current user error:", err);

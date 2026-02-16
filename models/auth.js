@@ -32,6 +32,16 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: "",
   },
+  teamId: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "Team",
+  default: null,
+},
+  role: {
+    type: String,
+    enum: ["player", "coach", "admin", "fan"],
+    default: "fan",
+  },
 });
 
 // ⭐ LOGIN CHECK

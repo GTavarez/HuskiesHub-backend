@@ -2,6 +2,8 @@
 require("dotenv").config();
 const express = require("express");
 const { connectDB } = require("./db");
+const http = require("http");
+const { Server } = require("socket.io");
 
 // ROUTES
 const authRoutes = require("./routes/auth");
@@ -9,10 +11,13 @@ const scheduleRoutes = require("./routes/schedule"); // ✅ router from schedule
 const adminRoutes = require("./routes/admin");
 const imagesRoutes = require("./routes/images");
 const uploadsRoutes = require("./routes/uploads");
-
+const messagesRoutes = require("./routes/messages");
+const teamsRoutes = require("./routes/teams");
+const chatSocket = require("./sockets/chat");
+const playersRoutes = require("./routes/players");
 const app = express();
 const PORT = process.env.PORT || 8080;
-
+const socketMiddlewares = require("./middlewares/sockets");
 // ---- BODY PARSERS ----
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -54,6 +59,9 @@ app.use("/api", uploadsRoutes);
 app.use("/images", imagesRoutes);
 app.use("/admin", adminRoutes);
 app.use("/", authRoutes);
+app.use("/api/messages", messagesRoutes);
+app.use("/api/teams", teamsRoutes);
+app.use("/api/players", playersRoutes);
 
 // Debug: Confirm backend is alive
 app.get("/api/health", (req, res) => {
@@ -62,6 +70,25 @@ app.get("/api/health", (req, res) => {
 
 // ---- EXPORT APP ----
 module.exports = app;
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin: [
+      "http://localhost:5173",
+      "http://localhost:5174",
+      "https://eshuskiesyoffee.com",
+    ],
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
+});
+io.use(socketMiddlewares);
+chatSocket(io);
+// basic test
+io.on("connection", (socket) => {
+  console.log("🟢 Socket connected:", socket.id);
+});
 
 // ---- START SERVER ONLY IF RUN DIRECTLY ----
 if (require.main === module) {
@@ -71,7 +98,7 @@ if (require.main === module) {
       await connectDB();
       console.log("🔥 Mongo connected — starting server");
 
-      app.listen(PORT, "0.0.0.0", () => {
+      server.listen(PORT, "0.0.0.0", () => {
         console.log(`🚀 Server running at http://localhost:${PORT}`);
       });
     } catch (err) {

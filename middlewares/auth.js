@@ -1,7 +1,8 @@
 const jwt = require("jsonwebtoken");
 const { JWT_SECRET } = require("../utils/config");
+const User = require("../models/auth");
 
-function auth(req, res, next) {
+async function auth(req, res, next) {
   try {
     const { authorization } = req.headers;
 
@@ -10,8 +11,12 @@ function auth(req, res, next) {
     }
     const token = authorization.replace("Bearer ", "");
     const payload = jwt.verify(token, JWT_SECRET);
+    const user = await User.findById(payload._id);
+    if (!user) {
+      return res.status(401).send({ message: "Authorization required" });
+    }
 
-    req.user = payload;
+    req.user = user;
     return next();
   } catch (err) {
     return res.status(401).send({ message: "Authorization required" });
