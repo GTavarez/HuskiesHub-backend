@@ -19,6 +19,8 @@ keys/
 *.pem
 *.p12
 *.crt
+envvars.txt
+key.txt
 
 # ==========================
 # Local Uploads

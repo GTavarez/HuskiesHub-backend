@@ -1,8 +1,8 @@
 require("dotenv").config();
-const mongoose = require("mongoose");
-const Player = require("../models/Player");
-const Team = require("../models/Team");
+const Player = require("../src/modules/players/model");
+const Team = require("../src/modules/teams/model");
 const { connectDB } = require("../db");
+
 const defaultImage = "default";
 
 // 👇 PUT YOUR PLAYERS HERE (from frontend constants)
@@ -123,7 +123,6 @@ async function seed() {
     await connectDB();
 
     // 🔍 find the team by name (safer than hardcoding ID)
-    const TEAM_ID = "695d3b42510e717bb7cca3e1";
     const team = await Team.findOne({ name: "18U Premier" });
 
     if (!team) {
@@ -142,7 +141,6 @@ async function seed() {
     await Player.deleteMany({ teamId: team._id });
 
     // ✅ insert players
-    await Player.insertMany(playersWithTeam);
     console.log("➡️ Inserting players:", playersWithTeam);
     const inserted = await Player.insertMany(playersWithTeam);
     console.log("✅ Inserted count:", inserted.length);
@@ -155,4 +153,6 @@ async function seed() {
   }
 }
 
-seed();
+if (require.main === module) {
+  seed();
+}
