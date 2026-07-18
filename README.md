@@ -34,18 +34,18 @@ Config dotenv & dotenvx
 Logs Google Cloud Run Logs
 🔐 Environment Variables
 
-Create a .env file:
+Create a `.env` file:
 
 PORT=8080
 MONGO_URI=your_mongo_uri_here
 JWT_SECRET=your_jwt_secret
-ADMIN_SECRET=SomeLongRandomSecretForUploads
+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5174,https://www.eshuskiesyoffee.com
 
 # Google Calendar API
 
 GOOGLE_CLIENT_EMAIL=...
 GOOGLE_PRIVATE_KEY=...
-GOOGLE_CALENDAR_ID=...
+CALENDAR_ID=...
 
 ⚠️ Never commit your .env file, secrets folder, or Google credentials.
 
@@ -63,14 +63,23 @@ npm start # Production
 HuskiesHub-backend/
 │── app.js
 │── db.js
-│── routes/
-│ ├── auth.js
-│ ├── schedule.js
-│ ├── admin.js
-│ └── images.js
-│── controllers/
-│── models/
-│── middlewares/
+│── src/
+│ ├── common/          # shared middlewares (auth, requireRole) & utils (config, gridfs)
+│ ├── modules/         # one folder per domain, each with model.js/controller.js/routes.js
+│ │ ├── users/         # signup/signin/me
+│ │ ├── teams/
+│ │ ├── players/
+│ │ ├── events/        # practices + games + RSVP
+│ │ ├── attendance/
+│ │ ├── announcements/
+│ │ ├── documents/
+│ │ ├── player-notes/  # coach evaluations/injury log/general notes
+│ │ ├── messages/      # team chat REST history
+│ │ ├── media/         # image/avatar upload + download (admin/images/uploads consolidated)
+│ │ ├── contact/
+│ │ ├── schedule/      # Google Calendar read-only
+│ │ └── payments|recruiting|performance|analytics/  # Phase 2-5 placeholders, not yet implemented
+│ └── sockets/         # chat.js
 │── uploads/
 │── secrets/
 │── Dockerfile
@@ -108,9 +117,9 @@ Streams GridFS image directly to the browser.
 
 🔒 Admin Upload API
 
-Requires header:
+Requires a signed-in user with `role: "admin"`:
 
-x-admin-secret: YOUR_ADMIN_SECRET
+Authorization: Bearer <jwt>
 
 POST /admin?slug=<slug>
 
@@ -119,7 +128,7 @@ Upload a player or team image.
 Example cURL:
 
 curl -v \
- -H "x-admin-secret: SomeLongRandomSecretForUploads" \
+ -H "Authorization: Bearer $JWT" \
  -F "file=@uploads/players/ac.jpg" \
  "https://your-cloudrun-url/admin?slug=ac"
 
@@ -138,7 +147,7 @@ GOOGLE_CLIENT_EMAIL
 
 GOOGLE_PRIVATE_KEY
 
-GOOGLE_CALENDAR_ID
+CALENDAR_ID
 
 Events are:
 
@@ -162,10 +171,12 @@ gcloud run deploy huskieshub-backend \
  --allow-unauthenticated \
  --set-env-vars "MONGO_URI=$MONGO_URI" \
   --set-env-vars "JWT_SECRET=$JWT_SECRET" \
- --set-env-vars "ADMIN_SECRET=$ADMIN_SECRET" \
-  --set-env-vars "GOOGLE_CLIENT_EMAIL=$GOOGLE_CLIENT_EMAIL" \
+ --set-env-vars "CORS_ALLOWED_ORIGINS=$CORS_ALLOWED_ORIGINS" \
+ --set-env-vars "GOOGLE_CLIENT_EMAIL=$GOOGLE_CLIENT_EMAIL" \
  --set-env-vars "GOOGLE_PRIVATE_KEY=$GOOGLE_PRIVATE_KEY" \
-  --set-env-vars "GOOGLE_CALENDAR_ID=$GOOGLE_CALENDAR_ID"
+  --set-env-vars "CALENDAR_ID=$CALENDAR_ID"
+
+Set `CORS_ALLOWED_ORIGINS` to a comma-separated list that includes your final frontend domain plus any local origins you still use.
 
 View Logs
 gcloud run services logs read huskieshub-backend --region=us-central1
