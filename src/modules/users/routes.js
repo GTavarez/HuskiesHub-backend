@@ -13,6 +13,12 @@ const {
   approveCollegeCoach,
   rejectCollegeCoach,
 } = require("./collegeCoachController");
+const {
+  submitRoleRequest,
+  listPendingRoleRequests,
+  approveRoleRequest,
+  rejectRoleRequest,
+} = require("./roleRequestController");
 const auth = require("../../common/middlewares/auth");
 const requireRole = require("../../common/middlewares/requireRole");
 
@@ -53,6 +59,26 @@ router.patch(
   auth,
   requireRole("admin"),
   rejectCollegeCoach
+);
+
+router.post("/role-request", auth, submitRoleRequest);
+router.get(
+  "/admin/role-requests/pending",
+  auth,
+  requireRole("admin"),
+  listPendingRoleRequests
+);
+router.patch(
+  "/admin/role-requests/:userId/approve",
+  auth,
+  requireRole("admin"),
+  approveRoleRequest
+);
+router.patch(
+  "/admin/role-requests/:userId/reject",
+  auth,
+  requireRole("admin"),
+  rejectRoleRequest
 );
 
 module.exports = router;
