@@ -48,7 +48,12 @@ const signin = async (req, res) => {
     const { email, password } = req.body;
 
     const user = await User.findUserByCredentials(email, password);
-    await user.populate([{ path: "playerId" }, { path: "children" }]);
+    await user.populate([
+      { path: "playerId" },
+      { path: "children" },
+      { path: "roleRequestPlayerIds", select: "name jersey teamId" },
+      { path: "roleRequestTeamId", select: "name ageGroup" },
+    ]);
 
     const token = user.generateAuthToken(); // ⭐ use model method
 
@@ -63,6 +68,10 @@ const signin = async (req, res) => {
         playerData: user.playerId || null,
         childrenData: user.children || [],
         collegeCoachStatus: user.collegeCoachStatus,
+        roleRequestType: user.roleRequestType,
+        roleRequestStatus: user.roleRequestStatus,
+        roleRequestPlayerIds: user.roleRequestPlayerIds || [],
+        roleRequestTeamId: user.roleRequestTeamId || null,
       },
     });
   } catch (error) {
@@ -74,6 +83,8 @@ const getCurrentUser = async (req, res) => {
     const user = await User.findById(req.user._id).populate([
       { path: "playerId" },
       { path: "children" },
+      { path: "roleRequestPlayerIds", select: "name jersey teamId" },
+      { path: "roleRequestTeamId", select: "name ageGroup" },
     ]);
 
     if (!user) {
@@ -90,6 +101,10 @@ const getCurrentUser = async (req, res) => {
       playerData: user.playerId || null,
       childrenData: user.children || [],
       collegeCoachStatus: user.collegeCoachStatus,
+      roleRequestType: user.roleRequestType,
+      roleRequestStatus: user.roleRequestStatus,
+      roleRequestPlayerIds: user.roleRequestPlayerIds || [],
+      roleRequestTeamId: user.roleRequestTeamId || null,
     });
   } catch (err) {
     console.error("Get current user error:", err);

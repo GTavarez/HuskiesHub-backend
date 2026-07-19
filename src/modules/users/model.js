@@ -74,6 +74,40 @@ const userSchema = new mongoose.Schema({
     ref: "User",
     default: null,
   },
+  // Player/parent/coach role verification request/approval state. Mirrors the
+  // college-coach block above: role only ever flips at approval time (see
+  // roleRequestController.js), never at request time. Only a "fan" can submit
+  // one — see submitRoleRequest.
+  roleRequestType: {
+    type: String,
+    enum: ["none", "player", "coach", "parent"],
+    default: "none",
+  },
+  roleRequestStatus: {
+    type: String,
+    enum: ["none", "pending", "approved", "rejected"],
+    default: "none",
+  },
+  // player: exactly 1 entry; parent: 1+ entries; coach: unused (empty)
+  roleRequestPlayerIds: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Player",
+    },
+  ],
+  // coach only
+  roleRequestTeamId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Team",
+    default: null,
+  },
+  roleRequestRequestedAt: { type: Date, default: null },
+  roleRequestReviewedAt: { type: Date, default: null },
+  roleRequestReviewedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    default: null,
+  },
 });
 
 // ⭐ LOGIN CHECK
