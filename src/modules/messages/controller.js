@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const Message = require("./model");
+const { canAccessTeam } = require("../../common/utils/ownership");
 
 /**
  * GET /api/messages/:teamId
@@ -15,15 +16,11 @@ const getTeamMessages = async (req, res) => {
         message: "Invalid teamId",
       });
     }
-    // ❌ User not on a team
-    if (!user.teamId) {
-      return res.status(403).send({ message: "Not assigned to a team" });
-    }
 
-    // ❌ User trying to access another team's chat
-    if (user.teamId.toString() !== teamId) {
+    if (!(await canAccessTeam(user, teamId))) {
       return res.status(403).send({ message: "Access denied" });
     }
+
     const messages = await Message.find({ teamId })
       .sort({ createdAt: -1 })
       .limit(50)
