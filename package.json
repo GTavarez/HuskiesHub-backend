@@ -17,10 +17,12 @@
     "lint": "npx eslint .",
     "start": "node app.js",
     "dev": "nodemon app.js",
-    "seed:players": "node scripts/seedPlayers.js"
+    "seed:players": "node scripts/seedPlayers.js",
+    "backup:db": "node scripts/backupDb.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.1",
+    "@google-cloud/storage": "^7.21.0",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
