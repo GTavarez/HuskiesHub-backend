@@ -108,6 +108,10 @@ const userSchema = new mongoose.Schema({
     ref: "User",
     default: null,
   },
+  // Password reset — only ever a hash of the emailed token is stored, never
+  // the raw token itself, so a DB read alone can't be used to reset a password.
+  resetPasswordTokenHash: { type: String, default: null, select: false },
+  resetPasswordExpires: { type: Date, default: null },
 });
 
 // ⭐ LOGIN CHECK
