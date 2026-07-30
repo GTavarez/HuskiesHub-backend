@@ -15,9 +15,21 @@ const TYPES_REQUIRING_REGISTRATION = ["registration", "deposit"];
 const TYPES_REQUIRING_PRODUCT = ["camp", "lesson", "apparel"];
 
 async function ensureStripeCustomer(user) {
-  if (user.stripeCustomerId) return user.stripeCustomerId;
-
   const stripe = getStripeClient();
+
+  if (user.stripeCustomerId) {
+    // A stored customer ID from Stripe test mode doesn't exist once the app
+    // switches to live keys (test/live are entirely separate Stripe
+    // environments) — verify it's actually valid before trusting it, rather
+    // than failing every checkout for anyone with a pre-switch test ID.
+    try {
+      await stripe.customers.retrieve(user.stripeCustomerId);
+      return user.stripeCustomerId;
+    } catch (err) {
+      if (err.code !== "resource_missing") throw err;
+    }
+  }
+
   const customer = await stripe.customers.create({
     email: user.email,
     name: user.name,
@@ -396,6 +408,18 @@ async function processAutopayForRegistration(registration, billingPeriod) {
     payment.stripePaymentIntentId = intent.id;
     if (intent.status === "succeeded") payment.status = "succeeded";
     await payment.save();
+
+    if (intent.status === "succeeded") {
+      registration.autopayInstallmentsCompleted += 1;
+      // Fixed installment plan, not indefinite billing — stop automatically
+      // once the season balance is fully paid off.
+      if (registration.autopayInstallmentsCompleted >= registration.autopayTotalInstallments) {
+        registration.autopayEnabled = false;
+        registration.status = "completed";
+      }
+      await registration.save();
+    }
+
     return { outcome: "billed", registrationId: registration._id, paymentId: payment._id };
   } catch (err) {
     payment.status = "failed";
@@ -409,36 +433,69 @@ async function processAutopayForRegistration(registration, billingPeriod) {
 // partial index on Payment{relatedRegistrationId, billingPeriod} (type:"autopay")
 // is the actual guard — the insert-first ordering in the helper above is what
 // makes it effective.
-const runAutopay = async (req, res) => {
+// Shared by the admin-triggered HTTP route and the scheduled-cron route.
+async function executeAutopayRun({ respectDayOfMonth }) {
   const billingPeriod = currentBillingPeriod();
+  const todayDayOfMonth = new Date().getDate();
 
+  const filter = {
+    autopayEnabled: true,
+    billingUserId: { $ne: null },
+    autopayAmountCents: { $gt: 0 },
+    $expr: { $lt: ["$autopayInstallmentsCompleted", "$autopayTotalInstallments"] },
+  };
+  if (respectDayOfMonth) {
+    filter.autopayDayOfMonth = todayDayOfMonth;
+  }
+
+  const registrations = await Registration.find(filter);
+
+  const results = await Promise.all(
+    registrations.map((registration) => processAutopayForRegistration(registration, billingPeriod))
+  );
+
+  const group = (outcome) =>
+    results
+      .filter((result) => result.outcome === outcome)
+      .map(({ registrationId, paymentId, reason }) => ({ registrationId, paymentId, reason }));
+
+  return {
+    billingPeriod,
+    billed: group("billed"),
+    skipped: group("skipped"),
+    failed: group("failed"),
+  };
+}
+
+// Admin-triggered manual run — ignores day-of-month so an admin can force a
+// catch-up run any day (e.g. if the scheduled cron run failed).
+const runAutopay = async (req, res) => {
   try {
-    const registrations = await Registration.find({
-      autopayEnabled: true,
-      billingUserId: { $ne: null },
-      autopayAmountCents: { $gt: 0 },
-    });
-
-    const results = await Promise.all(
-      registrations.map((registration) =>
-        processAutopayForRegistration(registration, billingPeriod)
-      )
-    );
-
-    const group = (outcome) =>
-      results
-        .filter((result) => result.outcome === outcome)
-        .map(({ registrationId, paymentId, reason }) => ({ registrationId, paymentId, reason }));
-
-    return res.json({
-      billingPeriod,
-      billed: group("billed"),
-      skipped: group("skipped"),
-      failed: group("failed"),
-    });
+    const result = await executeAutopayRun({ respectDayOfMonth: false });
+    return res.json(result);
   } catch (err) {
     console.error("Run autopay error:", err);
     return res.status(500).json({ message: "Autopay run failed" });
+  }
+};
+
+// Called daily by Cloud Scheduler (see infra) — only charges registrations
+// whose autopayDayOfMonth is today, and only actually bills once per calendar
+// month per registration regardless (idempotency key), so running this daily
+// is safe. Authenticated by a shared secret rather than a user JWT, since
+// there's no human admin session behind a scheduled job.
+const runAutopayCron = async (req, res) => {
+  const providedSecret = req.headers["x-cron-secret"];
+  if (!process.env.CRON_SECRET || providedSecret !== process.env.CRON_SECRET) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  try {
+    const result = await executeAutopayRun({ respectDayOfMonth: true });
+    return res.json(result);
+  } catch (err) {
+    console.error("Run autopay cron error:", err);
+    return res.status(500).json({ message: "Autopay cron run failed" });
   }
 };
 
@@ -648,6 +705,7 @@ module.exports = {
   createSetupSession,
   processWebhookEvent,
   runAutopay,
+  runAutopayCron,
   refundPayment,
   getBalance,
   getPaymentHistory,

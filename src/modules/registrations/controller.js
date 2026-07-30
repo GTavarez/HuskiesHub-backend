@@ -87,6 +87,7 @@ const createRegistration = async (req, res) => {
       depositAmountCents: resolvedDepositCents,
       autopayAmountCents: team.autopayAmountCents,
       autopayDayOfMonth: team.autopayDayOfMonth,
+      autopayTotalInstallments: team.autopayTotalInstallments,
       createdBy: req.user._id,
     });
     return res.status(201).json(registration);
@@ -99,12 +100,20 @@ const createRegistration = async (req, res) => {
   }
 };
 
-const PARENT_EDITABLE_FIELDS = ["autopayEnabled", "autopayAmountCents", "autopayDayOfMonth"];
+// Parents can never set their own autopay amount/day — the whole point of
+// the season-balance plan is a fixed, non-negotiable installment amount.
+// autopayEnabled itself is also never parent-PATCHable: it's only ever set
+// by the setup-session Stripe webhook (see handleCheckoutSessionCompleted),
+// once a card is actually saved.
+const PARENT_EDITABLE_FIELDS = [];
 const ADMIN_EDITABLE_FIELDS = [
-  ...PARENT_EDITABLE_FIELDS,
   "status",
   "registrationFeeCents",
   "depositAmountCents",
+  "autopayEnabled",
+  "autopayAmountCents",
+  "autopayDayOfMonth",
+  "autopayTotalInstallments",
 ];
 
 const updateRegistration = async (req, res) => {

@@ -17,6 +17,10 @@ const registrationSchema = new mongoose.Schema(
     autopayAmountCents: { type: Number, default: 0, min: 0 },
     // Capped at 28 to sidestep month-length edge cases (Feb, 30-day months).
     autopayDayOfMonth: { type: Number, min: 1, max: 28, default: 1 },
+    // Season-balance autopay is a fixed installment plan, not indefinite
+    // billing — runAutopay stops charging once completed >= total.
+    autopayTotalInstallments: { type: Number, default: 8, min: 1 },
+    autopayInstallmentsCompleted: { type: Number, default: 0, min: 0 },
     // Whose saved Stripe payment method to charge for this registration's autopay —
     // set when the setup-mode Checkout session completes (see payments/controller.js).
     billingUserId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
