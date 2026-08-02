@@ -10,6 +10,9 @@ const analyticsService = require("../analytics/service");
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
+// Mirrors HuskiesHub/src/constants/season.js — no shared module across the
+// two repos, so this must be updated by hand each year alongside that file.
+const DEFAULT_SEASON = "2026-2027";
 
 // Thrown for any tool-input problem the model should see back as a plain
 // message rather than a stack trace — never leaks internal error detail.
@@ -196,6 +199,38 @@ async function getOrgRevenue(user, { from, to } = {}) {
   return { totalRevenueCents };
 }
 
+async function getRegisteredPlayers(user, { season, teamId } = {}) {
+  if (teamId && !mongoose.Types.ObjectId.isValid(teamId)) {
+    throw new ToolError("Invalid team id.");
+  }
+
+  const filter = { season: season || DEFAULT_SEASON };
+  if (teamId) filter.teamId = teamId;
+
+  const registrations = await Registration.find(filter)
+    .populate("playerId", "name jersey")
+    .populate("teamId", "name ageGroup");
+
+  const rows = await Promise.all(
+    registrations.map(async (registration) => {
+      const balance = await computeRegistrationBalance(registration);
+      return {
+        playerName: registration.playerId?.name || "Unknown player",
+        team: registration.teamId?.name || "Unknown team",
+        status: registration.status,
+        registrationFeeCents: registration.registrationFeeCents,
+        balanceCents: balance.balanceCents,
+        registrationFeePaid: balance.balanceCents <= 0,
+        autopayEnabled: registration.autopayEnabled,
+        autopayInstallmentsCompleted: registration.autopayInstallmentsCompleted,
+        autopayTotalInstallments: registration.autopayTotalInstallments,
+      };
+    })
+  );
+
+  return { season: filter.season, totalRegistered: rows.length, players: rows };
+}
+
 module.exports = {
   getNextPractice,
   getMissedPracticesCount,
@@ -206,5 +241,6 @@ module.exports = {
   getFamilyBalance,
   getOutstandingBalancesOrgWide,
   getOrgRevenue,
+  getRegisteredPlayers,
   ToolError,
 };

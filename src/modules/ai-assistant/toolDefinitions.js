@@ -119,6 +119,18 @@ const ADMIN_ONLY_TOOLS = [
       },
     },
   },
+  {
+    name: "getRegisteredPlayers",
+    description:
+      "List players registered for a season (defaults to the current season), including their team, registration status, and payment/autopay status. Optionally filter to one team.",
+    input_schema: {
+      type: "object",
+      properties: {
+        season: { type: "string", description: 'e.g. "2026-2027" — defaults to the current season if omitted.' },
+        teamId: { type: "string", description: "Optional team id to filter to one team's registrations only." },
+      },
+    },
+  },
 ];
 
 function getToolsForRole(role) {
