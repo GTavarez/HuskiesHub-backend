@@ -145,6 +145,13 @@ const createCheckoutSession = async (req, res) => {
           quantity: 1,
         },
       ],
+      // Registration fee payments also save the card for the season-balance
+      // autopay plan — one checkout instead of asking the parent to enter
+      // their card a second time. See handleCheckoutSessionCompleted below,
+      // which enrolls autopay once this succeeds.
+      ...(type === "registration"
+        ? { payment_intent_data: { setup_future_usage: "off_session" } }
+        : {}),
       success_url: `${frontendUrl}/payments/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${frontendUrl}/payments/cancel`,
       metadata: {
@@ -261,6 +268,29 @@ async function handleCheckoutSessionCompleted(session) {
     await Registration.findByIdAndUpdate(payment.relatedRegistrationId, {
       depositPaidAt: new Date(),
     });
+  }
+
+  // Registration fee checkout also saved the card (setup_future_usage:
+  // "off_session" on the session, set above) — use it to enroll the season-
+  // balance autopay plan immediately instead of making the parent enter
+  // their card again in a separate step.
+  if (payment.type === "registration" && payment.relatedRegistrationId && session.payment_intent) {
+    const stripe = getStripeClient();
+    const intent = await stripe.paymentIntents.retrieve(session.payment_intent);
+    const paymentMethodId = intent.payment_method;
+    if (paymentMethodId) {
+      await stripe.customers.update(session.customer, {
+        invoice_settings: { default_payment_method: paymentMethodId },
+      });
+      await User.findByIdAndUpdate(payment.userId, {
+        stripeCustomerId: session.customer,
+        defaultPaymentMethodId: paymentMethodId,
+      });
+      await Registration.findByIdAndUpdate(payment.relatedRegistrationId, {
+        autopayEnabled: true,
+        billingUserId: payment.userId,
+      });
+    }
   }
 
   if (payment.type === "lesson" && payment.lessonSlotId) {
