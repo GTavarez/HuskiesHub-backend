@@ -6,6 +6,7 @@ const Registration = require("../registrations/model");
 const Product = require("../products/model");
 const LessonSlot = require("../lesson-slots/model");
 const User = require("../users/model");
+const Player = require("../players/model");
 const Waiver = require("../waivers/model");
 const WaiverSignature = require("../waiver-signatures/model");
 const { canAccessPlayer } = require("../../common/utils/ownership");
@@ -222,6 +223,43 @@ const createSetupSession = async (req, res) => {
   }
 };
 
+// Sent once, right when a registration fee payment succeeds — the club's
+// "welcome new family" touchpoint. A best-effort send (like the other
+// notification emails in this codebase): failure here never blocks the
+// webhook or the registration itself from completing.
+async function sendWelcomeEmail(user, registration) {
+  try {
+    const player = await Player.findById(registration.playerId);
+    const transporter = getTransporter();
+    const fromEmail = process.env.CONTACT_FROM_EMAIL || process.env.SMTP_USER;
+    const playerName = player?.name || "your player";
+    const monthlyAmount = (registration.autopayAmountCents / 100).toFixed(2);
+
+    await transporter.sendMail({
+      from: fromEmail,
+      to: user.email,
+      subject: "Welcome to the Empire State Huskies!",
+      text: [
+        `Hi ${user.name},`,
+        "",
+        `Thanks for registering ${playerName} for the ${registration.season} season — welcome to the Huskies family!`,
+        "",
+        "What happens next:",
+        `- Your registration fee has been received.`,
+        `- You're enrolled in the monthly payment plan: $${monthlyAmount}/month for ${registration.autopayTotalInstallments} months, automatically charged to the card on file.`,
+        "- Log in to your Parent Portal any time to check your balance, payment history, schedule, and team chat.",
+        "",
+        "If you have any questions, just reply to this email.",
+        "",
+        "Welcome to the team!",
+        "— Empire State Huskies Coaching Staff",
+      ].join("\n"),
+    });
+  } catch (err) {
+    console.warn("Welcome email not sent:", err.message);
+  }
+}
+
 // ---- Webhook event handling -------------------------------------------
 // Stripe is the source of truth: these handlers only ever update Payment
 // status/fields in response to a verified event, never optimistically from
@@ -274,22 +312,32 @@ async function handleCheckoutSessionCompleted(session) {
   // "off_session" on the session, set above) — use it to enroll the season-
   // balance autopay plan immediately instead of making the parent enter
   // their card again in a separate step.
-  if (payment.type === "registration" && payment.relatedRegistrationId && session.payment_intent) {
-    const stripe = getStripeClient();
-    const intent = await stripe.paymentIntents.retrieve(session.payment_intent);
-    const paymentMethodId = intent.payment_method;
-    if (paymentMethodId) {
-      await stripe.customers.update(session.customer, {
-        invoice_settings: { default_payment_method: paymentMethodId },
-      });
-      await User.findByIdAndUpdate(payment.userId, {
-        stripeCustomerId: session.customer,
-        defaultPaymentMethodId: paymentMethodId,
-      });
-      await Registration.findByIdAndUpdate(payment.relatedRegistrationId, {
-        autopayEnabled: true,
-        billingUserId: payment.userId,
-      });
+  if (payment.type === "registration" && payment.relatedRegistrationId) {
+    let registration = await Registration.findById(payment.relatedRegistrationId);
+
+    if (session.payment_intent) {
+      const stripe = getStripeClient();
+      const intent = await stripe.paymentIntents.retrieve(session.payment_intent);
+      const paymentMethodId = intent.payment_method;
+      if (paymentMethodId) {
+        await stripe.customers.update(session.customer, {
+          invoice_settings: { default_payment_method: paymentMethodId },
+        });
+        await User.findByIdAndUpdate(payment.userId, {
+          stripeCustomerId: session.customer,
+          defaultPaymentMethodId: paymentMethodId,
+        });
+        registration = await Registration.findByIdAndUpdate(
+          payment.relatedRegistrationId,
+          { autopayEnabled: true, billingUserId: payment.userId },
+          { new: true }
+        );
+      }
+    }
+
+    const user = await User.findById(payment.userId);
+    if (user && registration) {
+      await sendWelcomeEmail(user, registration);
     }
   }
 
