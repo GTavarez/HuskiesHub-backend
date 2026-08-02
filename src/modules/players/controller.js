@@ -15,6 +15,8 @@ const EDITABLE_FIELDS = [
   "GPA",
   "isCommitted",
   "committedCollege",
+  "battingThrowing",
+  "contactEmail",
 ];
 
 /**

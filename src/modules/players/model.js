@@ -23,6 +23,8 @@ const playerSchema = new mongoose.Schema(
     image: String,
     isCommitted: Boolean,
     committedCollege: String,
+    battingThrowing: { type: String, default: "" }, // e.g. "R/R", "L/R"
+    contactEmail: { type: String, default: "" },
     funFacts: [funFactSchema],
     highlights: [highlightSchema],
 
