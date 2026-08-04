@@ -44,7 +44,10 @@ const getTeamPlayers = async (req, res) => {
   }
 
   try {
-    const players = await Player.find({ teamId }).sort({ jersey: 1 });
+    const players = await Player.find({
+      teamId,
+      removedFromRoster: { $ne: true },
+    }).sort({ jersey: 1 });
     return res.json(players);
   } catch (err) {
     console.error("Get players by team error:", err);
@@ -109,9 +112,51 @@ const updatePlayer = async (req, res) => {
   }
 };
 
+/**
+ * DELETE /api/players/:playerId
+ * Admin (any player) or coach (their own team's players only) — deliberately
+ * NOT reachable via canAccessPlayer's parent/player branches, since removing
+ * a roster entry is a roster-management action, not a profile edit a family
+ * should be able to trigger themselves. This is a SOFT delete: it flips
+ * removedFromRoster so the player drops out of team rosters/PDFs, but the
+ * Player document (and anything referencing its id — registrations, chat
+ * history) stays in the database.
+ */
+const deletePlayer = async (req, res) => {
+  const { playerId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(playerId)) {
+    return res.status(400).json({ message: "Invalid playerId" });
+  }
+  if (!["admin", "coach"].includes(req.user.role)) {
+    return res.status(403).json({ message: "Forbidden" });
+  }
+
+  try {
+    const player = await Player.findById(playerId);
+    if (!player) {
+      return res.status(404).json({ message: "Player not found" });
+    }
+    if (
+      req.user.role === "coach" &&
+      (!player.teamId || player.teamId.toString() !== req.user.teamId?.toString())
+    ) {
+      return res.status(403).json({ message: "That player is not on your team" });
+    }
+
+    player.removedFromRoster = true;
+    await player.save();
+    return res.json({ removed: true });
+  } catch (err) {
+    console.error("Delete player error:", err);
+    return res.status(500).json({ message: "Failed to delete player" });
+  }
+};
+
 module.exports = {
   createPlayer,
   getTeamPlayers,
   uploadPlayerImage,
   updatePlayer,
+  deletePlayer,
 };

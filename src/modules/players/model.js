@@ -40,6 +40,11 @@ const playerSchema = new mongoose.Schema(
       enum: ["player", "coach", "admin"],
       default: "player",
     },
+
+    // "Delete" from a team's roster is a soft-remove, not a document delete —
+    // registrations, chat history, and PDFs already reference this playerId,
+    // so the record stays in the database and can be restored.
+    removedFromRoster: { type: Boolean, default: false },
   },
   {
     timestamps: true,

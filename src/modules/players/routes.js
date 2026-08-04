@@ -32,5 +32,11 @@ router.post(
 router.post("/", auth, requireRole("admin", "coach"), controller.createPlayer);
 router.get("/team/:teamId", controller.getTeamPlayers);
 router.patch("/:playerId", auth, controller.updatePlayer);
+router.delete(
+  "/:playerId",
+  auth,
+  requireRole("admin", "coach"),
+  controller.deletePlayer
+);
 
 module.exports = router;
