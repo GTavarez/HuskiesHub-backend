@@ -21,8 +21,21 @@ const listRegistrations = async (req, res) => {
   if (season) filter.season = season;
 
   try {
-    const registrations = await Registration.find(filter).sort({ createdAt: -1 });
-    return res.json(registrations);
+    const registrations = await Registration.find(filter)
+      .sort({ createdAt: -1 })
+      .populate("playerId", "name jersey");
+    // Keep playerId a plain id string for every existing caller (e.g. the
+    // balance lookup keys off it directly) — add the name/jersey alongside
+    // instead of replacing the field with the populated object.
+    const withPlayerNames = registrations.map((r) => {
+      const obj = r.toObject();
+      const player = obj.playerId;
+      obj.playerId = player?._id || player;
+      obj.playerName = player?.name || "";
+      obj.playerJersey = player?.jersey ?? null;
+      return obj;
+    });
+    return res.json(withPlayerNames);
   } catch (err) {
     console.error("List registrations error:", err);
     return res.status(500).json({ message: "Failed to fetch registrations" });
@@ -53,7 +66,15 @@ const getRegistration = async (req, res) => {
 // resolved from that team's configured pricing for anyone but admin, so a
 // parent can never set their own registration fee.
 const createRegistration = async (req, res) => {
-  const { playerId, season, registrationFeeCents, depositAmountCents } = req.body;
+  const {
+    playerId,
+    season,
+    registrationFeeCents,
+    depositAmountCents,
+    uniformOptIn,
+    autopayAmountCents,
+    autopayTotalInstallments,
+  } = req.body;
 
   if (!playerId || !season) {
     return res.status(400).json({ message: "playerId and season are required" });
@@ -79,15 +100,45 @@ const createRegistration = async (req, res) => {
         ? depositAmountCents
         : team.depositAmountCents;
 
+    // Uniform is opted in by default; opting out (only settable here, at
+    // registration time — never PATCHable afterward) discounts the package
+    // price off the monthly autopay balance rather than the upfront fee, so
+    // what's due at signing never changes based on this choice.
+    const resolvedUniformOptIn = uniformOptIn !== false;
+    const uniformFeeCents = team.uniformFeeCents || 0;
+
+    const resolvedTotalInstallments =
+      isAdmin && autopayTotalInstallments !== undefined
+        ? autopayTotalInstallments
+        : team.autopayTotalInstallments;
+
+    // Admin can set a fully custom monthly amount (e.g. a one-off partial
+    // -season arrangement) — this bypasses the standard uniform-inclusion
+    // math below entirely, since a custom plan isn't derived from the
+    // team's default pricing at all.
+    let resolvedAutopayAmountCents;
+    if (isAdmin && autopayAmountCents !== undefined) {
+      resolvedAutopayAmountCents = autopayAmountCents;
+    } else {
+      const seasonBalanceCents = team.autopayAmountCents * team.autopayTotalInstallments;
+      resolvedAutopayAmountCents = resolvedUniformOptIn
+        ? team.autopayAmountCents
+        : Math.round(
+            Math.max(0, seasonBalanceCents - uniformFeeCents) / team.autopayTotalInstallments
+          );
+    }
+
     const registration = await Registration.create({
       playerId,
       teamId: player.teamId,
       season,
       registrationFeeCents: resolvedFeeCents,
       depositAmountCents: resolvedDepositCents,
-      autopayAmountCents: team.autopayAmountCents,
+      autopayAmountCents: resolvedAutopayAmountCents,
       autopayDayOfMonth: team.autopayDayOfMonth,
-      autopayTotalInstallments: team.autopayTotalInstallments,
+      autopayTotalInstallments: resolvedTotalInstallments,
+      uniformOptIn: resolvedUniformOptIn,
+      uniformFeeCents,
       createdBy: req.user._id,
     });
     return res.status(201).json(registration);
@@ -114,6 +165,7 @@ const ADMIN_EDITABLE_FIELDS = [
   "autopayAmountCents",
   "autopayDayOfMonth",
   "autopayTotalInstallments",
+  "uniformFeeCents",
 ];
 
 const updateRegistration = async (req, res) => {

@@ -11,12 +11,17 @@ const rsvpSchema = new mongoose.Schema(
 
 const eventSchema = new mongoose.Schema(
   {
-    type: { type: String, enum: ["practice", "game", "lesson"], required: true },
+    type: { type: String, enum: ["practice", "game", "lesson", "meeting"], required: true },
     teamId: { type: mongoose.Schema.Types.ObjectId, ref: "Team", required: true },
     title: { type: String, required: true },
     startsAt: { type: Date, required: true },
     endsAt: { type: Date, required: true },
     location: { type: String, default: "" },
+    // Cancelling keeps the event visible (marked, not deleted) so anyone who
+    // already saw it on their schedule sees it's off rather than it just
+    // disappearing.
+    status: { type: String, enum: ["scheduled", "cancelled"], default: "scheduled" },
+    cancelledAt: { type: Date, default: null },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     // Bridges a DB-native event to an existing Google Calendar game; null for practices
     googleEventId: { type: String, default: null },

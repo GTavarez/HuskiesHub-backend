@@ -22,6 +22,10 @@ const teamSchema = new mongoose.Schema(
     // Number of monthly charges before autopay stops automatically (the
     // season-balance plan is a fixed installment count, not indefinite billing).
     autopayTotalInstallments: { type: Number, default: 8, min: 1 },
+    // Price of the uniform package, included by default — a family can opt
+    // out at registration time to have this discounted off their monthly
+    // balance. See registrations/controller.js createRegistration.
+    uniformFeeCents: { type: Number, default: 55000, min: 0 },
   },
   {
     timestamps: true,

@@ -4,7 +4,7 @@ const paymentSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: ["registration", "deposit", "autopay", "camp", "lesson", "apparel"],
+      enum: ["registration", "deposit", "autopay", "camp", "lesson", "apparel", "partialRegistration"],
       required: true,
     },
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },

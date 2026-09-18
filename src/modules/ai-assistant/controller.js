@@ -4,11 +4,20 @@ const toolHandlers = require("./toolHandlers");
 
 const MAX_ITERATIONS = 4;
 
-const SYSTEM_PROMPT =
-  "You are the HuskiesHub assistant for a youth softball club. Answer only using tool " +
-  "results — never invent balances, schedules, attendance counts, or notes. If a tool " +
-  "call fails or a value is missing, say so plainly rather than guessing. Keep answers " +
-  "short and specific.";
+// A function, not a constant — today's date has to be computed fresh per
+// request, or every "how many registered this week" question silently uses
+// whatever date the process happened to start on.
+function buildSystemPrompt() {
+  const today = new Date().toISOString().slice(0, 10);
+  return (
+    `Today's date is ${today}. You are the HuskiesHub assistant for a youth softball club. ` +
+    "Answer only using tool results — never invent balances, schedules, attendance counts, " +
+    "or notes. If a tool call fails or a value is missing, say so plainly rather than " +
+    "guessing. When a tool result includes a date/timestamp field, compare it to today's " +
+    "date yourself to answer relative-time questions (\"this week\", \"last 4 days\") — " +
+    "tools return raw data, not pre-filtered results. Keep answers short and specific."
+  );
+}
 
 // Hand-written loop (not the SDK's Tool Runner helper) so every tool call can
 // be logged individually for auditability: {userId, role, toolName, resolvedInput}.
@@ -41,7 +50,7 @@ const ask = async (req, res) => {
       const response = await client.messages.create({
         model: getAnthropicModel(),
         max_tokens: 2048,
-        system: SYSTEM_PROMPT,
+        system: buildSystemPrompt(),
         tools: tools.length > 0 ? tools : undefined,
         messages,
       });

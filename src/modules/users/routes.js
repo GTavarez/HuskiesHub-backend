@@ -7,7 +7,9 @@ const {
   resetPassword,
   getCurrentUser,
   updateUserProfile,
+  changePassword,
   uploadAvatar,
+  listCoaches,
 } = require("./controller");
 const {
   requestCollegeCoachAccess,
@@ -20,6 +22,8 @@ const {
   listPendingRoleRequests,
   approveRoleRequest,
   rejectRoleRequest,
+  linkChildToParent,
+  promoteFanToPlayer,
 } = require("./roleRequestController");
 const auth = require("../../common/middlewares/auth");
 const requireRole = require("../../common/middlewares/requireRole");
@@ -39,10 +43,12 @@ const upload = multer({
 
 router.post("/signup", signup);
 router.post("/signin", signin);
+router.get("/coaches", listCoaches);
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password", resetPassword);
 router.get("/me", auth, getCurrentUser);
 router.patch("/me", auth, updateUserProfile);
+router.patch("/me/password", auth, changePassword);
 router.patch("/me/avatar", auth, upload.single("avatar"), uploadAvatar);
 
 router.post("/college-coach/request", auth, requestCollegeCoachAccess);
@@ -84,5 +90,7 @@ router.patch(
   requireRole("admin"),
   rejectRoleRequest
 );
+router.post("/admin/link-child", auth, requireRole("admin"), linkChildToParent);
+router.post("/admin/promote-fan", auth, requireRole("admin"), promoteFanToPlayer);
 
 module.exports = router;

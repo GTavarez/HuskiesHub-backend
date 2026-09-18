@@ -14,6 +14,7 @@ const createTeam = async (req, res) => {
       depositAmountCents,
       autopayAmountCents,
       autopayDayOfMonth,
+      uniformFeeCents,
     } = req.body;
 
     if (!name) {
@@ -27,6 +28,7 @@ const createTeam = async (req, res) => {
       depositAmountCents,
       autopayAmountCents,
       autopayDayOfMonth,
+      uniformFeeCents,
     });
     return res.status(201).json(team);
   } catch (err) {
@@ -46,6 +48,7 @@ const TEAM_EDITABLE_FIELDS = [
   "depositAmountCents",
   "autopayAmountCents",
   "autopayDayOfMonth",
+  "uniformFeeCents",
 ];
 
 /**

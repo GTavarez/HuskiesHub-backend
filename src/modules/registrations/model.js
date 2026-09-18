@@ -24,6 +24,12 @@ const registrationSchema = new mongoose.Schema(
     // Whose saved Stripe payment method to charge for this registration's autopay —
     // set when the setup-mode Checkout session completes (see payments/controller.js).
     billingUserId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    // Snapshot of the team's uniform price at registration time (kept even if
+    // the team's price changes later) and whether this family included it.
+    // Only settable at creation — opting out discounts the package price off
+    // the monthly autopay balance. See registrations/controller.js.
+    uniformOptIn: { type: Boolean, default: true },
+    uniformFeeCents: { type: Number, default: 0, min: 0 },
     waiverSignatureId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "WaiverSignature",

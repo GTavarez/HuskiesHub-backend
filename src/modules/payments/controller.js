@@ -12,7 +12,7 @@ const WaiverSignature = require("../waiver-signatures/model");
 const { canAccessPlayer } = require("../../common/utils/ownership");
 const { getTransporter } = require("../../common/utils/mailer");
 
-const TYPES_REQUIRING_REGISTRATION = ["registration", "deposit"];
+const TYPES_REQUIRING_REGISTRATION = ["registration", "deposit", "partialRegistration"];
 const TYPES_REQUIRING_PRODUCT = ["camp", "lesson", "apparel"];
 
 async function ensureStripeCustomer(user) {
@@ -41,10 +41,32 @@ async function ensureStripeCustomer(user) {
   return customer.id;
 }
 
+async function computeRegistrationBalance(registration) {
+  const paidAgg = await Payment.aggregate([
+    {
+      $match: {
+        relatedRegistrationId: registration._id,
+        type: { $in: ["registration", "deposit", "partialRegistration"] },
+        status: "succeeded",
+      },
+    },
+    { $group: { _id: null, total: { $sum: "$amountCents" } } },
+  ]);
+  const paidCents = paidAgg[0]?.total || 0;
+
+  return {
+    registrationId: registration._id,
+    season: registration.season,
+    registrationFeeCents: registration.registrationFeeCents,
+    paidCents,
+    balanceCents: Math.max(registration.registrationFeeCents - paidCents, 0),
+  };
+}
+
 // ---- Checkout session creation ----------------------------------------
 
 const createCheckoutSession = async (req, res) => {
-  const { type, productId, registrationId, lessonSlotId } = req.body;
+  const { type, productId, registrationId, lessonSlotId, amountCents: requestedAmountCents } = req.body;
 
   if (![...TYPES_REQUIRING_REGISTRATION, ...TYPES_REQUIRING_PRODUCT].includes(type)) {
     return res.status(400).json({ message: "Invalid payment type" });
@@ -90,8 +112,28 @@ const createCheckoutSession = async (req, res) => {
         }
       }
 
-      amountCents = type === "deposit" ? registration.depositAmountCents : registration.registrationFeeCents;
-      description = `${type} — ${registration.season}`;
+      if (type === "partialRegistration") {
+        // A family paying down their balance in irregular, self-chosen
+        // amounts (not the fixed registration fee, and not the fixed
+        // monthly autopay installment) — e.g. "$800 this week, the rest
+        // whenever I can." Capped at what's actually still owed so this
+        // can never overpay past the registration fee.
+        const { balanceCents } = await computeRegistrationBalance(registration);
+        const requested = Math.round(Number(requestedAmountCents));
+        if (!Number.isFinite(requested) || requested <= 0) {
+          return res.status(400).json({ message: "A valid amountCents is required" });
+        }
+        if (requested > balanceCents) {
+          return res.status(400).json({
+            message: `That's more than the remaining balance ($${(balanceCents / 100).toFixed(2)}).`,
+          });
+        }
+        amountCents = requested;
+      } else {
+        amountCents = type === "deposit" ? registration.depositAmountCents : registration.registrationFeeCents;
+      }
+      description =
+        type === "partialRegistration" ? `Partial payment — ${registration.season}` : `${type} — ${registration.season}`;
       relatedRegistrationId = registration._id;
     } else {
       if (!productId || !mongoose.Types.ObjectId.isValid(productId)) {
@@ -260,6 +302,129 @@ async function sendWelcomeEmail(user, registration) {
   }
 }
 
+const FALL_WINTER_SEASON = "Fall/Winter 2026";
+
+function extractCustomFieldValue(session, key) {
+  const field = (session.custom_fields || []).find((f) => f.key === key);
+  if (!field) return "";
+  return field.text?.value || field.dropdown?.value || field.numeric?.value || "";
+}
+
+// Fires when we can't confidently auto-match a Fall/Winter Payment Link
+// purchase to an existing account/player — an admin has to finish the
+// registration by hand from the details in this email, same as the
+// manual-reconciliation workaround used for other Payment Links.
+async function notifyAdminOfUnmatchedFallWinterPayment({ email, playerName, amountCents, sessionId }) {
+  try {
+    const transporter = getTransporter();
+    const fromEmail = process.env.CONTACT_FROM_EMAIL || process.env.SMTP_USER;
+    const toEmail = process.env.CONTACT_TO_EMAIL || fromEmail;
+    await transporter.sendMail({
+      from: fromEmail,
+      to: toEmail,
+      subject: "Fall/Winter payment received — needs manual registration",
+      text: [
+        "A Fall/Winter registration payment came in through the Stripe Payment Link, but it couldn't be automatically matched to an existing HuskiesHub account/player.",
+        "",
+        `Amount: $${(amountCents / 100).toFixed(2)}`,
+        `Payer email: ${email || "(not provided)"}`,
+        `Player name entered: ${playerName || "(not provided)"}`,
+        `Stripe session: ${sessionId}`,
+        "",
+        "Please create/verify the registration manually from the Admin Dashboard → Registrations tab.",
+      ].join("\n"),
+    });
+  } catch (err) {
+    console.warn("Admin notification email not sent:", err.message);
+  }
+}
+
+async function sendFallWinterConfirmationEmail(user, player) {
+  try {
+    const transporter = getTransporter();
+    const fromEmail = process.env.CONTACT_FROM_EMAIL || process.env.SMTP_USER;
+    await transporter.sendMail({
+      from: fromEmail,
+      to: user.email,
+      subject: "Fall/Winter Registration Confirmed — Empire State Huskies",
+      text: [
+        `Hi ${user.name},`,
+        "",
+        `Thanks for registering ${player?.name || "your player"} for the Fall/Winter 2026 season — welcome to the Huskies family!`,
+        "",
+        "Your $2,500 Fall/Winter registration payment has been received in full.",
+        "",
+        "Log in to your Parent Portal any time to check your schedule, payment history, and team chat.",
+        "",
+        "If you have any questions, just reply to this email.",
+        "",
+        "— Empire State Huskies Coaching Staff",
+      ].join("\n"),
+    });
+  } catch (err) {
+    console.warn("Fall/Winter confirmation email not sent:", err.message);
+  }
+}
+
+// Reconciles a standalone Stripe Payment Link purchase (not created through
+// our own checkout flow, so there's no pre-existing Payment/Registration to
+// update) with an app account. Only auto-creates records when the match is
+// unambiguous — email matches an existing User AND the typed player name
+// matches exactly one of that user's children (or they only have one child).
+// Anything less certain is routed to a human via email rather than guessed.
+async function handleFallWinterPaymentLinkCompleted(session) {
+  const email = (session.customer_details?.email || "").toLowerCase().trim();
+  const playerName = extractCustomFieldValue(session, "player_name").trim();
+  const amountCents = session.amount_total || 250000;
+
+  const user = email ? await User.findOne({ email }) : null;
+  if (!user) {
+    await notifyAdminOfUnmatchedFallWinterPayment({ email, playerName, amountCents, sessionId: session.id });
+    return;
+  }
+
+  const children = await Player.find({ _id: { $in: user.children || [] } });
+  const normalizedTyped = playerName.toLowerCase();
+  const player =
+    children.find((c) => c.name?.toLowerCase().trim() === normalizedTyped) ||
+    (children.length === 1 ? children[0] : null);
+
+  if (!player) {
+    await notifyAdminOfUnmatchedFallWinterPayment({ email, playerName, amountCents, sessionId: session.id });
+    return;
+  }
+
+  const registration = await Registration.findOneAndUpdate(
+    { playerId: player._id, season: FALL_WINTER_SEASON },
+    {
+      $setOnInsert: {
+        playerId: player._id,
+        teamId: player.teamId,
+        season: FALL_WINTER_SEASON,
+        status: "active",
+        registrationFeeCents: amountCents,
+        depositAmountCents: 0,
+        autopayEnabled: false,
+        createdBy: user._id,
+      },
+    },
+    { upsert: true, new: true }
+  );
+
+  await Payment.create({
+    type: "registration",
+    userId: user._id,
+    amountCents,
+    stripeCheckoutSessionId: session.id,
+    stripePaymentIntentId: session.payment_intent || null,
+    status: "succeeded",
+    description: `Fall/Winter 2026 Registration — ${player.name}`,
+    relatedRegistrationId: registration._id,
+  });
+
+  await sendFallWinterConfirmationEmail(user, player);
+}
+
 // ---- Webhook event handling -------------------------------------------
 // Stripe is the source of truth: these handlers only ever update Payment
 // status/fields in response to a verified event, never optimistically from
@@ -296,7 +461,15 @@ async function handleCheckoutSessionCompleted(session) {
 
   // mode: "payment" — one-time purchase (registration/deposit/camp/lesson/apparel)
   const payment = await Payment.findOne({ stripeCheckoutSessionId: session.id });
-  if (!payment) return;
+  if (!payment) {
+    // Not a session our own checkout flow created — could be a standalone
+    // Stripe Payment Link (e.g. the Fall/Winter-only link), tagged via
+    // metadata set on the Payment Link itself.
+    if (session.metadata?.linkType === "fallWinterRegistration") {
+      await handleFallWinterPaymentLinkCompleted(session);
+    }
+    return;
+  }
 
   payment.status = "succeeded";
   payment.stripePaymentIntentId = session.payment_intent || payment.stripePaymentIntentId;
@@ -614,28 +787,6 @@ const refundPayment = async (req, res) => {
 
 // ---- Balance & history --------------------------------------------------
 
-async function computeRegistrationBalance(registration) {
-  const paidAgg = await Payment.aggregate([
-    {
-      $match: {
-        relatedRegistrationId: registration._id,
-        type: { $in: ["registration", "deposit"] },
-        status: "succeeded",
-      },
-    },
-    { $group: { _id: null, total: { $sum: "$amountCents" } } },
-  ]);
-  const paidCents = paidAgg[0]?.total || 0;
-
-  return {
-    registrationId: registration._id,
-    season: registration.season,
-    registrationFeeCents: registration.registrationFeeCents,
-    paidCents,
-    balanceCents: Math.max(registration.registrationFeeCents - paidCents, 0),
-  };
-}
-
 const getBalance = async (req, res) => {
   const { playerId } = req.query;
 
@@ -671,6 +822,13 @@ const getPaymentHistory = async (req, res) => {
     console.error("Get payment history error:", err);
     return res.status(500).json({ message: "Failed to fetch payment history" });
   }
+};
+
+// Read from an env var (not hardcoded) so the link can be rotated — e.g. if
+// it's ever deactivated/recreated in Stripe — without a frontend deploy.
+const getFallWinterPaymentLink = async (req, res) => {
+  const url = process.env.FALL_WINTER_PAYMENT_LINK || null;
+  return res.json({ url });
 };
 
 // ---- Reminder emails (admin-triggered, no dedup/rate-limiting in this pass) --
@@ -790,4 +948,5 @@ module.exports = {
   sendReminders,
   exportQuickbooksCsv,
   computeRegistrationBalance,
+  getFallWinterPaymentLink,
 };

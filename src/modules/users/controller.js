@@ -11,7 +11,7 @@ const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 const signup = async (req, res) => {
   try {
-    const { name, email, password, confirmPassword } = req.body;
+    const { name, email, password, confirmPassword, phone } = req.body;
 
     if (!name || !email || !password || !confirmPassword) {
       return res.status(400).send({ message: "Missing required fields" });
@@ -27,6 +27,7 @@ const signup = async (req, res) => {
       name,
       email,
       password: hashedPassword,
+      phone: phone || "",
     });
 
     const token = jwt.sign({ _id: user._id }, process.env.JWT_SECRET, {
@@ -39,6 +40,7 @@ const signup = async (req, res) => {
         _id: user._id,
         name: user.name,
         email: user.email,
+        phone: user.phone,
       },
     });
   } catch (err) {
@@ -67,6 +69,9 @@ const signin = async (req, res) => {
         _id: user._id,
         name: user.name,
         email: user.email,
+        phone: user.phone,
+        bio: user.bio,
+        coachTitle: user.coachTitle,
         role: user.role,
         teamId: user.teamId,
         playerData: user.playerId || null,
@@ -76,6 +81,7 @@ const signin = async (req, res) => {
         roleRequestStatus: user.roleRequestStatus,
         roleRequestPlayerIds: user.roleRequestPlayerIds || [],
         roleRequestTeamId: user.roleRequestTeamId || null,
+        mustChangePassword: user.mustChangePassword,
       },
     });
   } catch (error) {
@@ -93,7 +99,7 @@ const forgotPassword = async (req, res) => {
   }
 
   try {
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: email.trim().toLowerCase() });
     if (user) {
       const rawToken = crypto.randomBytes(32).toString("hex");
       user.resetPasswordTokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
@@ -176,6 +182,8 @@ const getCurrentUser = async (req, res) => {
       _id: user._id,
       name: user.name,
       email: user.email,
+      phone: user.phone,
+      bio: user.bio,
       avatar: user.avatar,
       teamId: user.teamId,
       role: user.role,
@@ -186,6 +194,7 @@ const getCurrentUser = async (req, res) => {
       roleRequestStatus: user.roleRequestStatus,
       roleRequestPlayerIds: user.roleRequestPlayerIds || [],
       roleRequestTeamId: user.roleRequestTeamId || null,
+      mustChangePassword: user.mustChangePassword,
     });
   } catch (err) {
     console.error("Get current user error:", err);
@@ -194,13 +203,18 @@ const getCurrentUser = async (req, res) => {
 };
 
 const updateUserProfile = async (req, res) => {
-  const { name, avatar } = req.body;
+  const { name, avatar, phone, bio, coachTitle } = req.body;
   const { _id: userId } = req.user;
+
+  const updates = { name, avatar };
+  if (phone !== undefined) updates.phone = phone;
+  if (bio !== undefined) updates.bio = bio;
+  if (coachTitle !== undefined) updates.coachTitle = coachTitle;
 
   try {
     const updatedUser = await User.findByIdAndUpdate(
       userId,
-      { name, avatar },
+      updates,
       { new: true, runValidators: true }
     ).orFail();
 
@@ -209,6 +223,9 @@ const updateUserProfile = async (req, res) => {
         _id: updatedUser._id,
         name: updatedUser.name,
         email: updatedUser.email,
+        phone: updatedUser.phone,
+        bio: updatedUser.bio,
+        coachTitle: updatedUser.coachTitle,
         avatar: updatedUser.avatar,
       },
     });
@@ -217,6 +234,45 @@ const updateUserProfile = async (req, res) => {
     res.status(500).send({ message: "Internal server error" });
   }
 };
+
+// Self-service password change while logged in — separate from the
+// forgot-password email flow, which stays the recovery path for a lost
+// password. Also clears mustChangePassword, so this is how an
+// admin-provisioned temp password gets replaced.
+const changePassword = async (req, res) => {
+  const { currentPassword, newPassword, confirmNewPassword } = req.body;
+  const { _id: userId } = req.user;
+
+  if (!currentPassword || !newPassword || !confirmNewPassword) {
+    return res.status(400).send({ message: "Missing required fields" });
+  }
+  if (newPassword !== confirmNewPassword) {
+    return res.status(400).send({ message: "New passwords do not match" });
+  }
+  if (newPassword.length < 8) {
+    return res.status(400).send({ message: "Password must be at least 8 characters" });
+  }
+
+  try {
+    const user = await User.findById(userId).select("+password");
+    if (!user) return res.status(404).send({ message: "User not found" });
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(401).send({ message: "Current password is incorrect" });
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    user.mustChangePassword = false;
+    await user.save();
+
+    return res.status(200).send({ message: "Password changed successfully" });
+  } catch (err) {
+    console.error("Change password error:", err);
+    return res.status(500).send({ message: "Internal server error" });
+  }
+};
+
 const uploadAvatar = async (req, res) => {
   const { _id: userId } = req.user;
 
@@ -277,6 +333,25 @@ const uploadAvatar = async (req, res) => {
   }
 };
 
+// GET /coaches — public (no auth): the site's "Coaching Staff" page and each
+// team page's coaching-staff block. Explicit opt-in via showOnCoachesPage —
+// role alone (coach/admin) isn't a safe filter, since some admin accounts
+// are internal/dev access rather than actual public-facing staff. Email/
+// phone are included deliberately — the site has always published coach
+// contact info publicly (this replaces a hardcoded contact list with real,
+// coach-editable data), so this isn't a new exposure.
+const listCoaches = async (req, res) => {
+  try {
+    const coaches = await User.find({ showOnCoachesPage: true })
+      .select("name email phone bio coachTitle avatar teamId")
+      .populate({ path: "teamId", select: "name" });
+    return res.json(coaches);
+  } catch (err) {
+    console.error("List coaches error:", err);
+    return res.status(500).json({ message: "Failed to fetch coaches" });
+  }
+};
+
 module.exports = {
   signup,
   signin,
@@ -284,5 +359,7 @@ module.exports = {
   resetPassword,
   getCurrentUser,
   updateUserProfile,
+  changePassword,
   uploadAvatar,
+  listCoaches,
 };

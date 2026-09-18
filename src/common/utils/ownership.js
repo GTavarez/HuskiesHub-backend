@@ -44,4 +44,16 @@ async function canAccessTeam(user, teamId) {
   return false;
 }
 
-module.exports = { canAccessPlayer, canAccessTeam };
+// Verifies a user is allowed to read/post in a given conversation (a
+// coach-created group chat). Membership is the whole check — unlike
+// canAccessTeam, admins do NOT get a blanket pass here, since a group chat is
+// deliberately scoped to whoever the coach picked, not "everyone who can see
+// this team."
+function canAccessConversation(user, conversation) {
+  if (!user || !conversation) return false;
+  return (conversation.memberIds || []).some(
+    (id) => id.toString() === user._id.toString()
+  );
+}
+
+module.exports = { canAccessPlayer, canAccessTeam, canAccessConversation };

@@ -17,6 +17,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
     unique: true,
+    // Normalized so "Name@Gmail.com" and "name@gmail.com" can't create two
+    // separate accounts for the same person.
+    lowercase: true,
+    trim: true,
     validate: {
       validator: (value) => validator.isEmail(value),
       message: "You must enter a valid email",
@@ -31,10 +35,47 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: "",
   },
+  phone: {
+    type: String,
+    default: "",
+  },
+  bio: {
+    type: String,
+    default: "",
+  },
+  // Display title on the public Coaches page (e.g. "Head Coach", "Pitching
+  // Coach") — the role enum itself only distinguishes coach/admin/etc, not
+  // this finer-grained public-facing label.
+  coachTitle: {
+    type: String,
+    default: "",
+  },
+  // Explicit opt-in for the public "Coaching Staff" page — role alone isn't
+  // enough, since not every admin account (e.g. internal/dev access) is
+  // actual public-facing coaching staff.
+  showOnCoachesPage: {
+    type: Boolean,
+    default: false,
+  },
+  // Set true on admin-provisioned accounts (e.g. a shared temp password) so
+  // the frontend can force a password change before letting them use the app.
+  mustChangePassword: {
+    type: Boolean,
+    default: false,
+  },
   teamId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Team",
     default: null,
+  },
+  // Admin-only opt-in: also cc'd on every team's schedule notification
+  // emails (new/edited/cancelled game or practice), not just their own
+  // team's — for spotting formatting/timing issues across every team at
+  // once. Deliberately scoped to schedule emails only, not announcements,
+  // chat digests, or the team Contacts list — those would just add noise.
+  watchAllScheduleEmails: {
+    type: Boolean,
+    default: false,
   },
   role: {
     type: String,
@@ -119,7 +160,9 @@ userSchema.statics.findUserByCredentials = async function findUserByCredentials(
   email,
   password
 ) {
-  const user = await this.findOne({ email }).select("+password");
+  const user = await this.findOne({ email: (email || "").trim().toLowerCase() }).select(
+    "+password"
+  );
   if (!user) {
     throw new Error("Incorrect email or password");
   }

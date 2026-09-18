@@ -5,6 +5,9 @@ const announcementSchema = new mongoose.Schema(
     teamId: { type: mongoose.Schema.Types.ObjectId, ref: "Team", default: null }, // null = org-wide
     title: { type: String, required: true },
     body: { type: String, required: true },
+    // GridFS-backed, same "/api/uploads/:id" pattern as avatars — admin-only,
+    // optional.
+    imageUrl: { type: String, default: null },
     authorId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     audience: {
       type: [String],

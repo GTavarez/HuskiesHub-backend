@@ -30,6 +30,8 @@ router.post(
 );
 
 router.post("/", auth, requireRole("admin", "coach"), controller.createPlayer);
+router.get("/export/contacts", auth, requireRole("admin"), controller.exportContactsCsv);
+router.get("/team/:teamId/contacts", auth, controller.getTeamContacts);
 router.get("/team/:teamId", controller.getTeamPlayers);
 router.patch("/:playerId", auth, controller.updatePlayer);
 router.delete(

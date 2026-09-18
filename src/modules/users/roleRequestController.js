@@ -142,6 +142,78 @@ const approveRoleRequest = async (req, res) => {
   }
 };
 
+// A parent's `children` list is otherwise only ever set once, at role-request
+// approval time above — there's no self-service or re-approval path for
+// adding a second child to an *already-approved* parent account later (e.g.
+// siblings who register weeks apart). This is the admin-only patch for that.
+const linkChildToParent = async (req, res) => {
+  const { parentEmail, playerId } = req.body;
+
+  if (!parentEmail || !playerId || !mongoose.Types.ObjectId.isValid(playerId)) {
+    return res.status(400).json({ message: "parentEmail and a valid playerId are required" });
+  }
+
+  try {
+    const parent = await User.findOne({ email: parentEmail.trim().toLowerCase() });
+    if (!parent) return res.status(404).json({ message: "No account found with that email" });
+    if (parent.role !== "parent") {
+      return res.status(400).json({ message: "That account is not a parent account" });
+    }
+
+    const player = await Player.findById(playerId);
+    if (!player) return res.status(404).json({ message: "Player not found" });
+
+    if (parent.children.some((id) => id.toString() === playerId)) {
+      return res.status(409).json({ message: "This child is already linked to that parent" });
+    }
+
+    parent.children.push(playerId);
+    await parent.save();
+
+    return res.json({ _id: parent._id, name: parent.name, email: parent.email, children: parent.children });
+  } catch (err) {
+    console.error("Link child to parent error:", err);
+    return res.status(500).json({ message: "Failed to link child" });
+  }
+};
+
+// A player who signs up for their own account (separate from a parent's)
+// lands as a plain "fan" until they submit a role request and an admin
+// approves it. If that step never happened — or the family didn't realize
+// the player's own login needed its own approval, separate from the
+// parent's — they're stuck seeing nothing team-specific with no pending
+// request for admin to find and approve. This is the direct admin fix:
+// promote an existing fan account straight to "player", linked to their
+// roster entry, without needing a role request in flight first.
+const promoteFanToPlayer = async (req, res) => {
+  const { email, playerId } = req.body;
+
+  if (!email || !playerId || !mongoose.Types.ObjectId.isValid(playerId)) {
+    return res.status(400).json({ message: "email and a valid playerId are required" });
+  }
+
+  try {
+    const user = await User.findOne({ email: email.trim().toLowerCase() });
+    if (!user) return res.status(404).json({ message: "No account found with that email" });
+    if (user.role !== "fan") {
+      return res.status(400).json({ message: "That account is not a plain fan account" });
+    }
+
+    const player = await Player.findById(playerId);
+    if (!player) return res.status(404).json({ message: "Player not found" });
+
+    user.role = "player";
+    user.playerId = player._id;
+    user.teamId = player.teamId;
+    await user.save();
+
+    return res.json({ _id: user._id, name: user.name, email: user.email, role: user.role, teamId: user.teamId });
+  } catch (err) {
+    console.error("Promote fan to player error:", err);
+    return res.status(500).json({ message: "Failed to promote account" });
+  }
+};
+
 const rejectRoleRequest = async (req, res) => {
   const { userId } = req.params;
 
@@ -168,4 +240,6 @@ module.exports = {
   listPendingRoleRequests,
   approveRoleRequest,
   rejectRoleRequest,
+  linkChildToParent,
+  promoteFanToPlayer,
 };

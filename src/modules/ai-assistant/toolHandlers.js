@@ -6,6 +6,7 @@ const Registration = require("../registrations/model");
 const { computeRegistrationBalance } = require("../payments/controller");
 const { createNoteRecord } = require("../player-notes/controller");
 const { canAccessPlayer } = require("../../common/utils/ownership");
+const { findTeamContacts } = require("../../common/utils/teamContacts");
 const analyticsService = require("../analytics/service");
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -164,6 +165,53 @@ async function getTeamAttendanceSummary(user, { teamId } = {}) {
   return { attendanceRate: Math.round((present / total) * 100), windowDays: 30 };
 }
 
+async function getEventAvailability(user, { eventId, date, teamId } = {}) {
+  let event;
+
+  if (eventId) {
+    if (!mongoose.Types.ObjectId.isValid(eventId)) throw new ToolError("Invalid event id.");
+    event = await Event.findById(eventId);
+    if (!event) throw new ToolError("Event not found.");
+  } else {
+    const targetTeamId = teamId || user.teamId;
+    if (!targetTeamId) throw new ToolError("No team specified.");
+    if (!mongoose.Types.ObjectId.isValid(targetTeamId)) throw new ToolError("Invalid team id.");
+
+    event = await Event.findOne({
+      type: "practice",
+      teamId: targetTeamId,
+      status: { $ne: "cancelled" },
+      startsAt: { $gte: date ? new Date(date) : new Date() },
+    }).sort({ startsAt: 1 });
+    if (!event) return { message: "No upcoming practice scheduled." };
+  }
+
+  if (user.role !== "admin" && event.teamId.toString() !== user.teamId?.toString()) {
+    throw new ToolError("You can only view your own team's availability.");
+  }
+
+  const contacts = await findTeamContacts(event.teamId);
+  const nameById = new Map(contacts.map((c) => [c._id.toString(), c.name]));
+
+  const responded = new Set();
+  const byStatus = { yes: [], no: [], maybe: [] };
+  (event.rsvps || []).forEach((rsvp) => {
+    const uid = rsvp.userId.toString();
+    responded.add(uid);
+    const name = nameById.get(uid) || "Unknown";
+    if (byStatus[rsvp.status]) byStatus[rsvp.status].push(name);
+  });
+  const notYetResponded = contacts.filter((c) => !responded.has(c._id.toString())).map((c) => c.name);
+
+  return {
+    event: { id: event._id, title: event.title, startsAt: event.startsAt, location: event.location },
+    going: byStatus.yes,
+    maybe: byStatus.maybe,
+    cantGo: byStatus.no,
+    notYetResponded,
+  };
+}
+
 // visibleToParent is hardcoded false — never accepted as a model-supplied
 // parameter, matching "coach notes saved this way are never visible to parents".
 async function saveCoachNote(user, { playerId, type, body } = {}) {
@@ -224,6 +272,7 @@ async function getRegisteredPlayers(user, { season, teamId } = {}) {
         autopayEnabled: registration.autopayEnabled,
         autopayInstallmentsCompleted: registration.autopayInstallmentsCompleted,
         autopayTotalInstallments: registration.autopayTotalInstallments,
+        registeredAt: registration.createdAt,
       };
     })
   );
@@ -237,6 +286,7 @@ module.exports = {
   getMyFamilyBalance,
   getMissedPracticesCountForPlayer,
   getTeamAttendanceSummary,
+  getEventAvailability,
   saveCoachNote,
   getFamilyBalance,
   getOutstandingBalancesOrgWide,

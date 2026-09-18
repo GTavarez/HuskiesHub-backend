@@ -78,6 +78,22 @@ const COACH_TOOLS = [
     },
   },
   {
+    name: "getEventAvailability",
+    description:
+      "Get who has RSVP'd yes/maybe/no (i.e. attendance) for a practice, game, or lesson on the coach's own team, plus who hasn't responded yet. If eventId is omitted, defaults to the team's next upcoming practice on or after the given date (or now) — use this for questions like \"who's coming to practice tomorrow\" or \"what's attendance looking like for practice\".",
+    input_schema: {
+      type: "object",
+      properties: {
+        eventId: { type: "string", description: "Optional specific event id." },
+        date: {
+          type: "string",
+          description: "Optional ISO date. Used to find the next practice on/after this date when eventId is omitted.",
+        },
+        teamId: { type: "string", description: "Optional team id; defaults to the coach's own team." },
+      },
+    },
+  },
+  {
     name: "saveCoachNote",
     description:
       "Save a private coaching note about a player on the coach's own team. Notes saved this way are never visible to parents.",
@@ -122,7 +138,7 @@ const ADMIN_ONLY_TOOLS = [
   {
     name: "getRegisteredPlayers",
     description:
-      "List players registered for a season (defaults to the current season), including their team, registration status, and payment/autopay status. Optionally filter to one team.",
+      "List players registered for a season (defaults to the current season), including their team, registration status, payment/autopay status, and the date each registration was created (registeredAt). Use registeredAt to answer questions about recent/new registrations (e.g. \"who registered in the last N days\") by comparing it to the current date yourself — the tool does not pre-filter by date. Optionally filter to one team.",
     input_schema: {
       type: "object",
       properties: {

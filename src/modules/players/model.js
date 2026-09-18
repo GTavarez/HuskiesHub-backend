@@ -25,6 +25,7 @@ const playerSchema = new mongoose.Schema(
     committedCollege: String,
     battingThrowing: { type: String, default: "" }, // e.g. "R/R", "L/R"
     contactEmail: { type: String, default: "" },
+    bio: { type: String, default: "" },
     funFacts: [funFactSchema],
     highlights: [highlightSchema],
 

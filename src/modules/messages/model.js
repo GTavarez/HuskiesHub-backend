@@ -8,6 +8,14 @@ const messageSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    // Null = the whole-team chat room (original behavior). Set = this message
+    // belongs to a coach-created group chat scoped to a subset of the team.
+    conversationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Conversation",
+      default: null,
+      index: true,
+    },
     senderId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
