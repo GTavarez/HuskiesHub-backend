@@ -1,13 +1,19 @@
 const mongoose = require("mongoose");
 const { PerformanceEntry } = require("./model");
 const PerformanceGoal = require("./goalModel");
-const { canAccessPlayer } = require("../../common/utils/ownership");
+const { canAccessPlayerScoped } = require("../../common/utils/ownership");
 
 const createEntry = async (req, res) => {
   const { playerId, metricType, value, unit, recordedAt, notes } = req.body;
 
   if (!playerId || !metricType || value === undefined || !unit) {
     return res.status(400).json({ message: "playerId, metricType, value, and unit are required" });
+  }
+  if (!mongoose.Types.ObjectId.isValid(playerId)) {
+    return res.status(400).json({ message: "Invalid playerId" });
+  }
+  if (!(await canAccessPlayerScoped(req.user, playerId))) {
+    return res.status(403).json({ message: "Forbidden" });
   }
 
   try {
@@ -40,7 +46,7 @@ const getEntries = async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(playerId)) {
     return res.status(400).json({ message: "Invalid playerId" });
   }
-  if (!canAccessPlayer(req.user, playerId)) {
+  if (!(await canAccessPlayerScoped(req.user, playerId))) {
     return res.status(403).json({ message: "Forbidden" });
   }
 
@@ -60,6 +66,12 @@ const createGoal = async (req, res) => {
     return res.status(400).json({
       message: "playerId, metricType, targetValue, and targetUnit are required",
     });
+  }
+  if (!mongoose.Types.ObjectId.isValid(playerId)) {
+    return res.status(400).json({ message: "Invalid playerId" });
+  }
+  if (!(await canAccessPlayerScoped(req.user, playerId))) {
+    return res.status(403).json({ message: "Forbidden" });
   }
 
   try {
@@ -83,7 +95,7 @@ const getGoals = async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(playerId)) {
     return res.status(400).json({ message: "Invalid playerId" });
   }
-  if (!canAccessPlayer(req.user, playerId)) {
+  if (!(await canAccessPlayerScoped(req.user, playerId))) {
     return res.status(403).json({ message: "Forbidden" });
   }
 
@@ -107,12 +119,17 @@ const updateGoal = async (req, res) => {
   }
 
   try {
+    const existing = await PerformanceGoal.findById(goalId);
+    if (!existing) return res.status(404).json({ message: "Goal not found" });
+    if (!(await canAccessPlayerScoped(req.user, existing.playerId))) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
     const goal = await PerformanceGoal.findByIdAndUpdate(
       goalId,
       { achieved: Boolean(achieved), achievedAt: achieved ? new Date() : null },
       { new: true }
     );
-    if (!goal) return res.status(404).json({ message: "Goal not found" });
     return res.json(goal);
   } catch (err) {
     console.error("Update performance goal error:", err);

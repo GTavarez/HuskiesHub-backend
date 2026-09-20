@@ -21,6 +21,22 @@ function canAccessPlayer(user, playerId) {
   return false;
 }
 
+// canAccessPlayer above lets ANY coach through for ANY player, on purpose
+// only where the caller has already scoped by team some other way. Anywhere a
+// coach reads or writes an individual player's data, use this instead: it
+// keeps every other role's rules unchanged but limits a coach to players on
+// their own team. Async because it needs the player's teamId. It is a
+// separate function (not a change to canAccessPlayer) so a forgotten `await`
+// on the old sync one can't silently turn into a truthy Promise.
+async function canAccessPlayerScoped(user, playerId) {
+  if (!canAccessPlayer(user, playerId)) return false;
+  if (user.role !== "coach") return true;
+  if (!user.teamId) return false;
+
+  const player = await Player.findById(playerId).select("teamId");
+  return Boolean(player && player.teamId && player.teamId.toString() === user.teamId.toString());
+}
+
 // Verifies a user is allowed to access a given team's chat. Unlike
 // canAccessPlayer, the parent branch can't be a pure ID comparison — a
 // parent's own User doc only holds their children's Player ids, not those
@@ -56,4 +72,4 @@ function canAccessConversation(user, conversation) {
   );
 }
 
-module.exports = { canAccessPlayer, canAccessTeam, canAccessConversation };
+module.exports = { canAccessPlayer, canAccessPlayerScoped, canAccessTeam, canAccessConversation };

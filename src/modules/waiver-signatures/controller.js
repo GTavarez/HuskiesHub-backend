@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const WaiverSignature = require("./model");
 const Waiver = require("../waivers/model");
-const { canAccessPlayer } = require("../../common/utils/ownership");
+const { canAccessPlayerScoped } = require("../../common/utils/ownership");
 
 const signWaiver = async (req, res) => {
   const { playerId, waiverId, signedName, agreedToTerms } = req.body;
@@ -11,7 +11,10 @@ const signWaiver = async (req, res) => {
       message: "playerId, waiverId, signedName, and agreedToTerms are required",
     });
   }
-  if (!canAccessPlayer(req.user, playerId)) {
+  if (!mongoose.Types.ObjectId.isValid(playerId)) {
+    return res.status(400).json({ message: "Invalid playerId" });
+  }
+  if (!(await canAccessPlayerScoped(req.user, playerId))) {
     return res.status(403).json({ message: "Forbidden" });
   }
 

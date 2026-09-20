@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const RecruitingProfile = require("./model");
 const Player = require("../players/model");
-const { canAccessPlayer } = require("../../common/utils/ownership");
+const { canAccessPlayer, canAccessPlayerScoped } = require("../../common/utils/ownership");
 const { isAllowedVideoUrl, ALLOWED_HOSTS } = require("../../common/utils/videoUrlAllowlist");
 
 // Narrower than canAccessPlayer alone: coach is deliberately excluded from
@@ -21,7 +21,7 @@ const getProfileForPlayer = async (req, res) => {
       return res.status(404).json({ message: "Recruiting profile not found" });
     }
 
-    if (canAccessPlayer(req.user, playerId)) {
+    if (await canAccessPlayerScoped(req.user, playerId)) {
       return res.json(profile);
     }
 

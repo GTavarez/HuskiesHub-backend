@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 const Player = require("./model");
 const User = require("../users/model");
 const Team = require("../teams/model");
-const { canAccessPlayer } = require("../../common/utils/ownership");
+const { canAccessPlayerScoped } = require("../../common/utils/ownership");
 const { findTeamContacts } = require("../../common/utils/teamContacts");
 
 function csvField(value) {
@@ -87,8 +87,9 @@ const uploadPlayerImage = (req, res) => {
 
 /**
  * PATCH /api/players/:playerId
- * Ownership-gated: admin/coach, the player's linked parent, or the player
- * themself (via canAccessPlayer). Only whitelisted profile fields are
+ * Ownership-gated: admin, a coach for their own team's players, the player's
+ * linked parent, or the player themself (via canAccessPlayerScoped). Only
+ * whitelisted profile fields are
  * writable — team assignment and the internal chat role are not.
  */
 const updatePlayer = async (req, res) => {
@@ -98,7 +99,7 @@ const updatePlayer = async (req, res) => {
     return res.status(400).json({ message: "Invalid playerId" });
   }
 
-  if (!canAccessPlayer(req.user, playerId)) {
+  if (!(await canAccessPlayerScoped(req.user, playerId))) {
     return res.status(403).json({ message: "Forbidden" });
   }
 

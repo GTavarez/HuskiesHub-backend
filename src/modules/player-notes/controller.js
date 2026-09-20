@@ -1,11 +1,17 @@
 const mongoose = require("mongoose");
 const PlayerNote = require("./model");
+const { canAccessPlayerScoped } = require("../../common/utils/ownership");
 
 const listNotes = async (req, res) => {
   const { playerId } = req.query;
 
   if (!playerId || !mongoose.Types.ObjectId.isValid(playerId)) {
     return res.status(400).json({ message: "Valid playerId is required" });
+  }
+  // Every role, not just coaches: a parent could previously list another
+  // family's parent-visible notes by guessing a player id.
+  if (!(await canAccessPlayerScoped(req.user, playerId))) {
+    return res.status(403).json({ message: "Forbidden" });
   }
 
   const filter = { playerId };
@@ -38,6 +44,12 @@ const createNote = async (req, res) => {
   if (!playerId || !type || !body) {
     return res.status(400).json({ message: "playerId, type, and body are required" });
   }
+  if (!mongoose.Types.ObjectId.isValid(playerId)) {
+    return res.status(400).json({ message: "Invalid playerId" });
+  }
+  if (!(await canAccessPlayerScoped(req.user, playerId))) {
+    return res.status(403).json({ message: "Forbidden" });
+  }
 
   try {
     const note = await createNoteRecord({
@@ -61,8 +73,13 @@ const deleteNote = async (req, res) => {
   }
 
   try {
-    const note = await PlayerNote.findByIdAndDelete(id);
-    if (!note) return res.status(404).json({ message: "Note not found" });
+    const existing = await PlayerNote.findById(id);
+    if (!existing) return res.status(404).json({ message: "Note not found" });
+    if (!(await canAccessPlayerScoped(req.user, existing.playerId))) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    await PlayerNote.findByIdAndDelete(id);
     return res.status(204).send();
   } catch (err) {
     console.error("Delete player note error:", err);
