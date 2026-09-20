@@ -77,6 +77,14 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  // Automated-QA accounts only. Anything one of these accounts does must
+  // never email a real person (no team announcement, no admin oversight
+  // copy), and these accounts are never emailed themselves. Set by hand in
+  // the database; there is deliberately no API to flip it.
+  isTestAccount: {
+    type: Boolean,
+    default: false,
+  },
   role: {
     type: String,
     enum: ["player", "coach", "admin", "fan", "parent", "college_coach"],

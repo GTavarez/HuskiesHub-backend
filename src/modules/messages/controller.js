@@ -69,7 +69,7 @@ async function sendDigestToContact(user, team, now) {
 
   const preview = unread
     .slice(-5)
-    .map((m) => `${m.senderName}: ${m.text}`)
+    .map((m) => `${m.senderName}: ${[m.text, m.imageId ? "[photo]" : ""].filter(Boolean).join(" ")}`)
     .join("\n");
 
   try {

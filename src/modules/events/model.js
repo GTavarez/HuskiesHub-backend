@@ -17,6 +17,9 @@ const eventSchema = new mongoose.Schema(
     startsAt: { type: Date, required: true },
     endsAt: { type: Date, required: true },
     location: { type: String, default: "" },
+    // Who the team is playing (games only). Optional, and remembered per team
+    // so it can be picked from a list on the next game.
+    opponent: { type: String, default: "" },
     // Cancelling keeps the event visible (marked, not deleted) so anyone who
     // already saw it on their schedule sees it's off rather than it just
     // disappearing.

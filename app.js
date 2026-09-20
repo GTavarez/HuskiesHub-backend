@@ -18,6 +18,7 @@ const playersRoutes = require("./src/modules/players/routes");
 const eventsRoutes = require("./src/modules/events/routes");
 const attendanceRoutes = require("./src/modules/attendance/routes");
 const announcementsRoutes = require("./src/modules/announcements/routes");
+const savedOptionsRoutes = require("./src/modules/saved-options/routes");
 const documentsRoutes = require("./src/modules/documents/routes");
 const playerNotesRoutes = require("./src/modules/player-notes/routes");
 const paymentsRoutes = require("./src/modules/payments/routes");
@@ -112,6 +113,7 @@ app.use("/api/players", playersRoutes);
 app.use("/api/events", eventsRoutes);
 app.use("/api/attendance", attendanceRoutes);
 app.use("/api/announcements", announcementsRoutes);
+app.use("/api/saved-options", savedOptionsRoutes);
 app.use("/api/documents", documentsRoutes);
 app.use("/api/player-notes", playerNotesRoutes);
 app.use("/api/payments", paymentsRoutes);
@@ -170,6 +172,8 @@ const io = new Server(server, {
     credentials: true,
   },
 });
+// Lets REST handlers (e.g. chat photo upload) broadcast into a chat room.
+app.set("io", io);
 io.use(socketMiddlewares);
 chatSocket(io);
 // basic test

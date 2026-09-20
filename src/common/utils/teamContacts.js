@@ -11,13 +11,13 @@ async function findTeamContacts(teamId) {
   const users = await User.find({
     $or: [{ teamId }, { children: { $in: playerIds } }, { playerId: { $in: playerIds } }],
   });
-  return users.filter((u) => u.email);
+  return users.filter((u) => u.email && !u.isTestAccount);
 }
 
 // Org-wide equivalent for a null-teamId ("everyone") announcement.
 async function findAllContacts() {
   const users = await User.find({});
-  return users.filter((u) => u.email);
+  return users.filter((u) => u.email && !u.isTestAccount);
 }
 
 // Merges the admins who opted into watching every team's schedule emails
@@ -25,7 +25,7 @@ async function findAllContacts() {
 // contact on that team — used only by the schedule notification emails, not
 // announcements/chat digests/the Contacts panel.
 async function withScheduleWatchers(contacts) {
-  const watchers = await User.find({ watchAllScheduleEmails: true, email: { $exists: true, $ne: "" } });
+  const watchers = await User.find({ watchAllScheduleEmails: true, isTestAccount: { $ne: true }, email: { $exists: true, $ne: "" } });
   const seen = new Set(contacts.map((c) => String(c._id)));
   const extra = watchers.filter((w) => !seen.has(String(w._id)));
   return [...contacts, ...extra];

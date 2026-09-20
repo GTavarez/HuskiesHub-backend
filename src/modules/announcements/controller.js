@@ -111,7 +111,10 @@ const createAnnouncement = async (req, res) => {
       audience: audience || [],
       authorId: req.user._id,
     });
-    notifyAnnouncementRecipients(announcement);
+    // A test account posting (even to a real team) must never email anyone.
+    if (!req.user.isTestAccount) {
+      notifyAnnouncementRecipients(announcement);
+    }
     return res.status(201).json(announcement);
   } catch (err) {
     console.error("Create announcement error:", err);

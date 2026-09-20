@@ -25,11 +25,22 @@ const messageSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    // A photo-only message has no text; every other message still needs some.
     text: {
       type: String,
-      required: true,
+      required: function requiredUnlessPhoto() {
+        return !this.imageId;
+      },
       trim: true,
       maxlength: 1000,
+      default: "",
+    },
+    // GridFS file id of an attached photo. Deliberately NOT a public URL:
+    // photos are only served through GET /api/messages/photo/:messageId,
+    // which re-checks that the viewer is actually in this chat.
+    imageId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
     },
   },
   {

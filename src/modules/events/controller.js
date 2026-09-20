@@ -4,6 +4,7 @@ const Team = require("../teams/model");
 const User = require("../users/model");
 const { getTransporter } = require("../../common/utils/mailer");
 const { findTeamContacts, withScheduleWatchers } = require("../../common/utils/teamContacts");
+const { rememberOption } = require("../saved-options/controller");
 
 // Cloud Run's default timezone is UTC, so a plain toLocaleString() renders
 // event times 4-5 hours off from what's actually in the schedule (e.g. a
@@ -22,9 +23,12 @@ function formatEventTime(date) {
 async function notifyAdminsOfChange({ action, event, team, actorId }) {
   try {
     const [admins, actor] = await Promise.all([
-      User.find({ role: "admin" }),
+      User.find({ role: "admin", isTestAccount: { $ne: true } }),
       actorId ? User.findById(actorId) : null,
     ]);
+    // Automated QA accounts create and delete events constantly; that must
+    // never turn into oversight email for the real admins.
+    if (actor?.isTestAccount) return;
     if (admins.length === 0) return;
 
     const transporter = getTransporter();
@@ -106,7 +110,7 @@ const getEvent = async (req, res) => {
 };
 
 const createEvent = async (req, res) => {
-  const { type, teamId, title, startsAt, endsAt, location, googleEventId, notifyTeam } = req.body;
+  const { type, teamId, title, startsAt, endsAt, location, opponent, googleEventId, notifyTeam } = req.body;
 
   if (!type || !teamId || !title || !startsAt || !endsAt) {
     return res.status(400).json({ message: "Missing required fields" });
@@ -126,11 +130,17 @@ const createEvent = async (req, res) => {
       startsAt,
       endsAt,
       location,
+      opponent: type === "game" && typeof opponent === "string" ? opponent.trim().replace(/\s+/g, " ") : "",
       googleEventId: googleEventId || null,
       createdBy: req.user._id,
     });
 
-    if (notifyTeam) {
+    rememberOption({ kind: "location", name: event.location });
+    if (event.type === "game") {
+      rememberOption({ kind: "opponent", teamId, name: event.opponent });
+    }
+
+    if (notifyTeam && !req.user.isTestAccount) {
       notifyEventCreated(event);
     }
     Team.findById(teamId).then((team) =>
@@ -248,7 +258,7 @@ const updateEvent = async (req, res) => {
     return res.status(400).json({ message: "Invalid event id" });
   }
 
-  const { title, startsAt, endsAt, location, notifyTeam } = req.body;
+  const { title, startsAt, endsAt, location, opponent, notifyTeam } = req.body;
 
   try {
     const before = await Event.findById(id);
@@ -260,13 +270,27 @@ const updateEvent = async (req, res) => {
       return res.status(403).json({ message: "You can only edit your own team's events" });
     }
 
-    const event = await Event.findByIdAndUpdate(
-      id,
-      { title, startsAt, endsAt, location },
-      { new: true, runValidators: true }
-    );
+    const updates = { title, startsAt, endsAt, location };
+    // Only touch the opponent when the form actually sent one, so an older
+    // client that doesn't know about the field can't blank it out.
+    if (typeof opponent === "string" && before.type === "game") {
+      updates.opponent = opponent.trim().replace(/\s+/g, " ");
+    }
 
-    if (notifyTeam) {
+    const event = await Event.findByIdAndUpdate(id, updates, {
+      new: true,
+      runValidators: true,
+    });
+
+    // Only count a value the edit actually introduced.
+    if (event.location !== before.location) {
+      rememberOption({ kind: "location", name: event.location });
+    }
+    if (event.type === "game" && event.opponent !== before.opponent) {
+      rememberOption({ kind: "opponent", teamId: event.teamId, name: event.opponent });
+    }
+
+    if (notifyTeam && !req.user.isTestAccount) {
       notifyEventUpdated(before, event);
     }
     Team.findById(event.teamId).then((team) =>
@@ -366,7 +390,7 @@ const cancelEvent = async (req, res) => {
       { new: true }
     );
 
-    if (notifyTeam) {
+    if (notifyTeam && !req.user.isTestAccount) {
       notifyEventCancelled(event);
     }
     Team.findById(event.teamId).then((team) =>
