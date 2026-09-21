@@ -131,6 +131,13 @@ const updatePaymentStatus = async (req, res) => {
   }
 
   try {
+    const existing = await CoachPayment.findById(id).select("method stripeTransferId").lean();
+    if (!existing) return res.status(404).json({ message: "Payment not found" });
+    // Money that went out through Stripe can't be un-sent by flipping a flag.
+    if (existing.method === "stripe" || (existing.stripeTransferId && existing.stripeTransferId !== "")) {
+      return res.status(409).json({ message: "This payment was sent through Stripe and can't be changed here." });
+    }
+
     const update =
       status === "paid"
         ? {

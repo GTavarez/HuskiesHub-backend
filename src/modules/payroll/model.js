@@ -1,10 +1,10 @@
 const mongoose = require("mongoose");
 
-// Track-only ledger — no money moves through this. Coaches are paid outside
-// the app (Zelle, Venmo, check, bank transfer); this records what each coach
-// is owed and, once handled, how and when they were paid. Stripe Connect
-// payouts would need per-coach onboarding and identity verification, so they
-// are a separate piece of work.
+// Ledger of what each coach is owed and how and when they were paid. Most
+// payments are handled outside the app (Zelle, Venmo, check, bank transfer)
+// and marked paid by hand. A coach who has finished Stripe Connect onboarding
+// can instead be paid with the admin's "Pay with Stripe" action (see
+// connectController.js), which records the transfer id as the reference.
 const PAYMENT_METHODS = ["zelle", "venmo", "cash_app", "check", "cash", "bank_transfer", "other"];
 
 const coachPaymentSchema = new mongoose.Schema(
@@ -17,7 +17,9 @@ const coachPaymentSchema = new mongoose.Schema(
     status: { type: String, enum: ["unpaid", "paid"], default: "unpaid" },
     paidAt: { type: Date, default: null },
     paidBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
-    method: { type: String, enum: [...PAYMENT_METHODS, ""], default: "" },
+    // "stripe" is set only by the Stripe payout endpoint, never by hand.
+    method: { type: String, enum: [...PAYMENT_METHODS, "stripe", ""], default: "" },
+    stripeTransferId: { type: String, default: null },
     reference: { type: String, default: "", trim: true, maxlength: 200 },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   },

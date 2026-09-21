@@ -85,6 +85,13 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  // A coach's Stripe Connect (Express) account, created when they set up
+  // payouts. Not returned by default; read it with .select("+stripeConnectAccountId").
+  stripeConnectAccountId: {
+    type: String,
+    default: null,
+    select: false,
+  },
   role: {
     type: String,
     enum: ["player", "coach", "admin", "fan", "parent", "college_coach"],
