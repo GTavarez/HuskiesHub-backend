@@ -24,7 +24,11 @@ const playerSchema = new mongoose.Schema(
     isCommitted: Boolean,
     committedCollege: String,
     battingThrowing: { type: String, default: "" }, // e.g. "R/R", "L/R"
-    contactEmail: { type: String, default: "" },
+    // Private contact details for a minor: never returned by the public roster
+    // (select: false). Read them through GET /api/players/:playerId/contact,
+    // which is limited to the player's family, their coach, and admins.
+    contactEmail: { type: String, default: "", select: false },
+    phone: { type: String, default: "", select: false },
     bio: { type: String, default: "" },
     funFacts: [funFactSchema],
     highlights: [highlightSchema],

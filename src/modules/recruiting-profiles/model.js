@@ -13,8 +13,8 @@ const recruitingProfileSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
-    satScore: { type: Number, default: null },
-    actScore: { type: Number, default: null },
+    satScore: { type: Number, default: null, min: 400, max: 1600 },
+    actScore: { type: Number, default: null, min: 1, max: 36 },
     exitVelocity: { type: Number, default: null }, // mph
     popTime: { type: Number, default: null }, // seconds, catchers
     pitchVelocity: { type: Number, default: null }, // mph

@@ -25,9 +25,23 @@ const EDITABLE_FIELDS = [
   "committedCollege",
   "battingThrowing",
   "contactEmail",
+  "phone",
   "bio",
   "funFacts",
 ];
+
+// Stores US phone numbers in one readable shape, "(201) 555-0123". Empty clears
+// the number; anything that isn't 10 digits (or 11 with a leading 1) is rejected
+// so a typo doesn't silently become the number a coach calls.
+function normalizePhone(value) {
+  if (value === null || value === undefined) return "";
+  const raw = String(value).trim();
+  if (raw === "") return "";
+  let digits = raw.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) digits = digits.slice(1);
+  if (digits.length !== 10) return null;
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
 
 /**
  * POST /api/players
@@ -40,6 +54,50 @@ const createPlayer = async (req, res) => {
   } catch (err) {
     console.error("Create player error:", err);
     return res.status(400).json({ message: err.message });
+  }
+};
+
+/**
+ * GET /api/players/:playerId/contact
+ * A player's private phone and contact email. Same access as editing the
+ * profile: admin, the coach of the player's own team, the linked parent, or
+ * the player themself. The public roster never includes these.
+ */
+const getPlayerContact = async (req, res) => {
+  const { playerId } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(playerId)) {
+    return res.status(400).json({ message: "Invalid playerId" });
+  }
+  if (!(await canAccessPlayerScoped(req.user, playerId))) {
+    return res.status(403).json({ message: "Forbidden" });
+  }
+  try {
+    const player = await Player.findById(playerId).select("+phone +contactEmail").lean();
+    if (!player) return res.status(404).json({ message: "Player not found" });
+    return res.json({ phone: player.phone || "", contactEmail: player.contactEmail || "" });
+  } catch (err) {
+    console.error("Get player contact error:", err);
+    return res.status(500).json({ message: "Failed to fetch contact details" });
+  }
+};
+
+/**
+ * GET /api/players/committed  (public)
+ * Only what the public College Commitments page shows.
+ */
+const getCommittedPlayers = async (req, res) => {
+  try {
+    const players = await Player.find({
+      isCommitted: true,
+      removedFromRoster: { $ne: true },
+    })
+      .select("name jersey position gradYear image committedCollege")
+      .sort({ gradYear: 1, name: 1 })
+      .lean();
+    return res.json(players);
+  } catch (err) {
+    console.error("Get committed players error:", err);
+    return res.status(500).json({ message: "Failed to fetch committed players" });
   }
 };
 
@@ -106,6 +164,13 @@ const updatePlayer = async (req, res) => {
   const updates = {};
   for (const field of EDITABLE_FIELDS) {
     if (req.body[field] !== undefined) updates[field] = req.body[field];
+  }
+  if (updates.phone !== undefined) {
+    const phone = normalizePhone(updates.phone);
+    if (phone === null) {
+      return res.status(400).json({ message: "Enter a 10-digit phone number." });
+    }
+    updates.phone = phone;
   }
   // Frontend sends funFacts as a plain string list; the schema stores each
   // one as a subdocument (text + createdAt) — normalize here rather than
@@ -286,6 +351,8 @@ const getTeamContacts = async (req, res) => {
 };
 
 module.exports = {
+  getPlayerContact,
+  getCommittedPlayers,
   createPlayer,
   getTeamPlayers,
   uploadPlayerImage,
