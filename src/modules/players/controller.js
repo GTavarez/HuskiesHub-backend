@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Player = require("./model");
 const User = require("../users/model");
 const Team = require("../teams/model");
+const RecruitingProfile = require("../recruiting-profiles/model");
 const { canAccessPlayerScoped } = require("../../common/utils/ownership");
 const { findTeamContacts } = require("../../common/utils/teamContacts");
 
@@ -26,6 +27,7 @@ const EDITABLE_FIELDS = [
   "battingThrowing",
   "contactEmail",
   "phone",
+  "city",
   "bio",
   "funFacts",
 ];
@@ -72,12 +74,62 @@ const getPlayerContact = async (req, res) => {
     return res.status(403).json({ message: "Forbidden" });
   }
   try {
-    const player = await Player.findById(playerId).select("+phone +contactEmail").lean();
+    const player = await Player.findById(playerId).select("+phone +contactEmail +city").lean();
     if (!player) return res.status(404).json({ message: "Player not found" });
-    return res.json({ phone: player.phone || "", contactEmail: player.contactEmail || "" });
+    return res.json({
+      phone: player.phone || "",
+      contactEmail: player.contactEmail || "",
+      city: player.city || "",
+    });
   } catch (err) {
     console.error("Get player contact error:", err);
     return res.status(500).json({ message: "Failed to fetch contact details" });
+  }
+};
+
+/**
+ * GET /api/players/team/:teamId/showcase-details
+ * Everything a tournament showcase sheet needs beyond the public roster, for a
+ * whole team in one request: private phone, email and city, plus SAT/ACT.
+ * Admins, or the coach of that team.
+ */
+const getTeamShowcaseDetails = async (req, res) => {
+  const { teamId } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(teamId)) {
+    return res.status(400).json({ message: "Invalid teamId" });
+  }
+  const isAdmin = req.user.role === "admin";
+  const isTeamCoach =
+    req.user.role === "coach" && req.user.teamId && String(req.user.teamId) === String(teamId);
+  if (!isAdmin && !isTeamCoach) {
+    return res.status(403).json({ message: "Forbidden" });
+  }
+
+  try {
+    const players = await Player.find({ teamId, removedFromRoster: { $ne: true } })
+      .select("+phone +contactEmail +city")
+      .lean();
+    const profiles = await RecruitingProfile.find({ playerId: { $in: players.map((p) => p._id) } })
+      .select("playerId satScore actScore")
+      .lean();
+    const scoresByPlayer = new Map(profiles.map((p) => [String(p.playerId), p]));
+
+    return res.json(
+      players.map((p) => {
+        const scores = scoresByPlayer.get(String(p._id));
+        return {
+          playerId: p._id,
+          phone: p.phone || "",
+          contactEmail: p.contactEmail || "",
+          city: p.city || "",
+          satScore: scores?.satScore ?? null,
+          actScore: scores?.actScore ?? null,
+        };
+      })
+    );
+  } catch (err) {
+    console.error("Get team showcase details error:", err);
+    return res.status(500).json({ message: "Failed to fetch showcase details" });
   }
 };
 
@@ -351,6 +403,7 @@ const getTeamContacts = async (req, res) => {
 };
 
 module.exports = {
+  getTeamShowcaseDetails,
   getPlayerContact,
   getCommittedPlayers,
   createPlayer,

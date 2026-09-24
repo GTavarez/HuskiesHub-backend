@@ -29,6 +29,8 @@ const playerSchema = new mongoose.Schema(
     // which is limited to the player's family, their coach, and admins.
     contactEmail: { type: String, default: "", select: false },
     phone: { type: String, default: "", select: false },
+    // Private like phone: used on tournament showcase sheets, never public.
+    city: { type: String, default: "", select: false, trim: true, maxlength: 80 },
     bio: { type: String, default: "" },
     funFacts: [funFactSchema],
     highlights: [highlightSchema],

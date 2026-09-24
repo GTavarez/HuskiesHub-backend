@@ -34,6 +34,7 @@ router.get("/committed", controller.getCommittedPlayers);
 router.get("/:playerId/contact", auth, controller.getPlayerContact);
 router.get("/export/contacts", auth, requireRole("admin"), controller.exportContactsCsv);
 router.get("/team/:teamId/contacts", auth, controller.getTeamContacts);
+router.get("/team/:teamId/showcase-details", auth, controller.getTeamShowcaseDetails);
 router.get("/team/:teamId", controller.getTeamPlayers);
 router.patch("/:playerId", auth, controller.updatePlayer);
 router.delete(
