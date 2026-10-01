@@ -35,6 +35,14 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: "",
   },
+  // Set when an account is promoted to admin (see adminRoleController.js), so
+  // demoting them later restores their original role instead of guessing.
+  // Null for every account that has never gone through that flow.
+  previousRoleBeforeAdmin: {
+    type: String,
+    enum: ["player", "coach", "parent", "fan", "college_coach", null],
+    default: null,
+  },
   phone: {
     type: String,
     default: "",
