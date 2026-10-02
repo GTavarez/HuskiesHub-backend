@@ -26,6 +26,7 @@ const {
   promoteFanToPlayer,
 } = require("./roleRequestController");
 const { promoteToAdmin, demoteAdmin } = require("./adminRoleController");
+const { listCoachesPageAccounts, updateCoachesPageEntry } = require("./coachesPageController");
 const auth = require("../../common/middlewares/auth");
 const requireRole = require("../../common/middlewares/requireRole");
 
@@ -95,5 +96,7 @@ router.post("/admin/link-child", auth, requireRole("admin"), linkChildToParent);
 router.post("/admin/promote-fan", auth, requireRole("admin"), promoteFanToPlayer);
 router.post("/admin/users/:userId/promote-to-admin", auth, requireRole("admin"), promoteToAdmin);
 router.post("/admin/users/:userId/demote-admin", auth, requireRole("admin"), demoteAdmin);
+router.get("/admin/coaches-page", auth, requireRole("admin"), listCoachesPageAccounts);
+router.patch("/admin/users/:userId/coaches-page", auth, requireRole("admin"), updateCoachesPageEntry);
 
 module.exports = router;

@@ -217,6 +217,9 @@ const updatePlayer = async (req, res) => {
   for (const field of EDITABLE_FIELDS) {
     if (req.body[field] !== undefined) updates[field] = req.body[field];
   }
+  if (typeof updates.committedCollege === "string") {
+    updates.committedCollege = updates.committedCollege.trim().replace(/\s+/g, " ");
+  }
   if (updates.phone !== undefined) {
     const phone = normalizePhone(updates.phone);
     if (phone === null) {
