@@ -9,6 +9,19 @@ const auth = new google.auth.GoogleAuth({
 
 const calendar = google.calendar({ version: "v3", auth });
 
+// Google Calendar entries to leave out of the site and the subscribe-by-URL
+// feed. This site only has read access to that calendar, so an entry that was
+// added there by mistake (or is now covered by games entered by hand) can't be
+// deleted from here; listing its Google event id hides it instead. Nothing in
+// Google is changed. Remove an id to bring the entry back.
+const HIDDEN_CALENDAR_EVENT_IDS = new Set([
+  "3kc3q7re6keqeenn6m19lc6ij4", // 14U — USA Disorder, Sat Oct 3 2026
+  "f2p0pdsp34k7f84gg525r0se5s", // Premier — Jersey Outlaws Fall Showcase, Sat Oct 3 2026
+  "kiaqf8em4assi6hnh9n8fou79s", // 18U Gold — Rock Fast Pitch, Sat Oct 3 2026
+]);
+
+const isVisibleCalendarEvent = (item) => !HIDDEN_CALENDAR_EVENT_IDS.has(item.id);
+
 const getSchedule = async (req, res) => {
   try {
     const calendarId = process.env.CALENDAR_ID;
@@ -21,7 +34,7 @@ const getSchedule = async (req, res) => {
       timeMin: new Date("2000-01-01").toISOString(),
     });
 
-    res.json(response.data.items || []);
+    res.json((response.data.items || []).filter(isVisibleCalendarEvent));
   } catch (err) {
     console.error("❌ Google Calendar API Error:", err);
     res.status(500).json({ message: "Error fetching calendar events" });
@@ -74,7 +87,7 @@ const getScheduleIcs = async (req, res) => {
       orderBy: "startTime",
       timeMin: new Date("2000-01-01").toISOString(),
     });
-    const games = gamesResponse.data.items || [];
+    const games = (gamesResponse.data.items || []).filter(isVisibleCalendarEvent);
     // Games aren't tagged with a real teamId — best-effort match against the
     // team name, which is how every game/tournament title is written.
     const teamGames = team
@@ -133,4 +146,4 @@ const getScheduleIcs = async (req, res) => {
   }
 };
 
-module.exports = { getSchedule, getScheduleIcs };
+module.exports = { getSchedule, getScheduleIcs, HIDDEN_CALENDAR_EVENT_IDS };
