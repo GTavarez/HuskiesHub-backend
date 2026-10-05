@@ -6,6 +6,7 @@ const requireRole = require("../../common/middlewares/requireRole");
 const router = express.Router();
 
 router.get("/summary", auth, controller.getSummary);
+router.get("/room", auth, controller.getRoomInfo);
 router.post("/read", auth, controller.markRead);
 router.post("/mute", auth, controller.muteRoom);
 router.get("/members", auth, controller.listMembers);

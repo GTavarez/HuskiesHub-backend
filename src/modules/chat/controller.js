@@ -172,6 +172,37 @@ const getSummary = async (req, res) => {
 };
 
 /**
+ * GET /api/chat/room?teamId|conversationId|eventId
+ * What the chat screen needs to know about one room and the person looking at
+ * it: its name, whether it is announcements-only, whether they can post or
+ * moderate, and whether they have muted it.
+ */
+const getRoomInfo = async (req, res) => {
+  try {
+    const room = await requireRoom(req);
+    const [members, state] = await Promise.all([
+      getRoomMembers(room),
+      ChatRoomState.findOne({ userId: req.user._id, roomKey: room.key }).lean(),
+    ]);
+    const mutedUntil = state?.mutedUntil && new Date(state.mutedUntil) > new Date() ? state.mutedUntil : null;
+    return res.json({
+      key: room.key,
+      type: room.type,
+      teamId: String(room.teamId),
+      label: roomDisplayName(room, req.user._id, members),
+      announcementOnly: room.announcementOnly,
+      moderator: room.moderator,
+      canPost: room.canPost,
+      mutedUntil,
+      memberCount: members.length,
+      createdBy: room.conversation ? String(room.conversation.createdBy) : null,
+    });
+  } catch (err) {
+    return sendError(res, err);
+  }
+};
+
+/**
  * POST /api/chat/read  { teamId | conversationId | eventId }
  */
 const markRead = async (req, res) => {
@@ -466,6 +497,7 @@ const sendTestPush = async (req, res) => {
 };
 
 module.exports = {
+  getRoomInfo,
   getSummary,
   markRead,
   muteRoom,
