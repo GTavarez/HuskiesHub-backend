@@ -3,6 +3,7 @@ const Announcement = require("./model");
 const { getTransporter } = require("../../common/utils/mailer");
 const { findTeamContacts, findAllContacts } = require("../../common/utils/teamContacts");
 const { getBucket } = require("../../common/utils/gridfs");
+const { pushToUsers } = require("../chat/pushService");
 
 // Best-effort — an email hiccup should never fail the announcement itself
 // (matches the pattern used for every other transactional email in this app).
@@ -36,6 +37,15 @@ async function notifyAnnouncementRecipients(announcement) {
           })
           .catch((err) => console.warn("Announcement email not sent:", err.message))
       )
+    );
+    await pushToUsers(
+      recipients.map((user) => user._id),
+      {
+        title: `New announcement: ${announcement.title}`,
+        body: String(announcement.body || "").slice(0, 140),
+        url: announcement.teamId ? `/teams/${announcement.teamId}` : "/",
+        tag: `announcement:${announcement._id}`,
+      }
     );
   } catch (err) {
     console.warn("Announcement notification skipped:", err.message);

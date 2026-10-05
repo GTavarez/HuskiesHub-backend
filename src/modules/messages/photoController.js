@@ -1,33 +1,23 @@
 const mongoose = require("mongoose");
 const Message = require("./model");
-const Conversation = require("../conversations/model");
-const { canAccessTeam, canAccessConversation } = require("../../common/utils/ownership");
+const { resolveRoom } = require("../../common/utils/chatRooms");
 const { getBucket } = require("../../common/utils/gridfs");
+const { ChatError, createMessage } = require("../chat/chatService");
 
 // SVG is deliberately not here: an SVG can carry script, and these bytes get
 // opened in the browser.
 const SAFE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"];
 
-// Resolves which chat room a request is about and whether the user may be in
-// it. Returns { room, teamId, conversationId } or null when access is denied.
-async function resolveRoom(user, { teamId, conversationId }) {
-  if (conversationId) {
-    if (!mongoose.Types.ObjectId.isValid(conversationId)) return null;
-    const conversation = await Conversation.findById(conversationId).lean();
-    if (!conversation || !canAccessConversation(user, conversation)) return null;
-    return {
-      room: `conversation:${conversationId}`,
-      teamId: conversation.teamId,
-      conversationId,
-    };
-  }
-  if (!teamId || !mongoose.Types.ObjectId.isValid(teamId)) return null;
-  if (!(await canAccessTeam(user, teamId))) return null;
-  return { room: String(teamId), teamId, conversationId: null };
-}
+// The room a photo is being posted to: a group/direct chat, a game's chat, or
+// the whole-team chat, whichever the request names.
+const roomParams = (body) => ({
+  teamId: body.teamId,
+  conversationId: body.conversationId,
+  eventId: body.eventId,
+});
 
 /**
- * POST /api/messages/photo  (multipart: photo, teamId | conversationId, text?)
+ * POST /api/messages/photo  (multipart: photo, teamId | conversationId | eventId, text?, replyToId?)
  * Stores the photo and posts it into the chat for everyone in the room.
  */
 const sendPhotoMessage = async (req, res) => {
@@ -40,9 +30,13 @@ const sendPhotoMessage = async (req, res) => {
   }
 
   try {
-    const target = await resolveRoom(req.user, req.body);
-    if (!target) {
+    const room = await resolveRoom(req.user, roomParams(req.body));
+    if (!room) {
       return res.status(403).json({ message: "Access denied" });
+    }
+    // Checked before the file is stored, so a refused post leaves no orphan upload.
+    if (!room.canPost) {
+      return res.status(403).json({ message: "Only coaches and admins can post here." });
     }
 
     const bucket = getBucket();
@@ -60,20 +54,22 @@ const sendPhotoMessage = async (req, res) => {
       uploadStream.on("error", reject);
     });
 
-    const message = await Message.create({
-      teamId: target.teamId,
-      conversationId: target.conversationId,
-      senderId: req.user._id,
-      senderName: req.user.name,
-      text,
-      imageId: fileId,
-    });
-
-    const io = req.app.get("io");
-    if (io) io.to(target.room).emit("new-message", message);
-
-    return res.status(201).json(message);
+    try {
+      const message = await createMessage({
+        io: req.app.get("io"),
+        room,
+        user: req.user,
+        text,
+        replyToId: req.body.replyToId,
+        imageId: fileId,
+      });
+      return res.status(201).json(message);
+    } catch (err) {
+      bucket.delete(fileId).catch(() => {});
+      throw err;
+    }
   } catch (err) {
+    if (err instanceof ChatError) return res.status(err.status).json({ message: err.message });
     console.error("Send chat photo error:", err);
     return res.status(500).json({ message: "Failed to send photo" });
   }
@@ -91,15 +87,15 @@ const getMessagePhoto = async (req, res) => {
 
   try {
     const message = await Message.findById(messageId).lean();
-    if (!message || !message.imageId) {
+    if (!message || !message.imageId || message.deletedAt) {
       return res.status(404).json({ message: "Photo not found" });
     }
 
-    const target = await resolveRoom(req.user, {
-      teamId: message.conversationId ? null : message.teamId,
-      conversationId: message.conversationId,
-    });
-    if (!target) {
+    let params = { teamId: message.teamId };
+    if (message.conversationId) params = { conversationId: message.conversationId };
+    else if (message.eventId) params = { eventId: message.eventId };
+    const room = await resolveRoom(req.user, params);
+    if (!room) {
       return res.status(403).json({ message: "Access denied" });
     }
 

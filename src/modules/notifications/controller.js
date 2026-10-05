@@ -3,6 +3,7 @@ const Player = require("../players/model");
 const LessonRequestSlot = require("../lesson-requests/model");
 const { getTransporter } = require("../../common/utils/mailer");
 const { findTeamContacts } = require("../../common/utils/teamContacts");
+const { pushToUsers } = require("../chat/pushService");
 
 const WINDOW_DAYS = 7;
 const DAY_LABEL_TO_INDEX = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
@@ -105,6 +106,18 @@ async function sendEventReminder(event) {
   const transporter = getTransporter();
   const fromEmail = process.env.CONTACT_FROM_EMAIL || process.env.SMTP_USER;
   let sent = 0;
+  const notConfirmed = contacts.filter(
+    (user) => !event.rsvps.some((r) => r.userId.toString() === user._id.toString() && r.status === "yes")
+  );
+  await pushToUsers(
+    notConfirmed.map((user) => user._id),
+    {
+      title: `Tomorrow: ${event.title}`,
+      body: `Can you make it? ${event.location ? `${event.location}. ` : ""}Tap to reply.`,
+      url: `/teams/${event.teamId}?event=${event._id}`,
+      tag: `event:${event._id}`,
+    }
+  );
   for (const user of contacts) {
     const alreadyConfirmed = event.rsvps.some(
       (r) => r.userId.toString() === user._id.toString() && r.status === "yes"

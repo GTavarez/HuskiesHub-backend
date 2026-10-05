@@ -13,6 +13,7 @@ const mediaRoutes = require("./src/modules/media/routes");
 const contactRoutes = require("./src/modules/contact/routes");
 const messagesRoutes = require("./src/modules/messages/routes");
 const conversationsRoutes = require("./src/modules/conversations/routes");
+const chatRoutes = require("./src/modules/chat/routes");
 const teamsRoutes = require("./src/modules/teams/routes");
 const playersRoutes = require("./src/modules/players/routes");
 const eventsRoutes = require("./src/modules/events/routes");
@@ -109,6 +110,7 @@ app.use("/api/contact", contactRoutes);
 app.use("/", usersRoutes); // /signup, /signin, /me
 app.use("/api/messages", messagesRoutes);
 app.use("/api/conversations", conversationsRoutes);
+app.use("/api/chat", chatRoutes);
 app.use("/api/teams", teamsRoutes);
 app.use("/api/players", playersRoutes);
 app.use("/api/events", eventsRoutes);

@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
-// A coach-created group chat scoped to a subset of one team's roster —
-// sits alongside the original whole-team chat rather than replacing it.
+// A chat scoped to some of one team's people, alongside the whole-team chat:
+// a coach-created group, or a direct message between two people.
 const conversationSchema = new mongoose.Schema(
   {
     teamId: {
@@ -9,6 +9,13 @@ const conversationSchema = new mongoose.Schema(
       ref: "Team",
       required: true,
       index: true,
+    },
+    // "group" is a coach-created group chat. "direct" is a private message; if
+    // a player is involved, their parent(s) are always members too.
+    kind: {
+      type: String,
+      enum: ["group", "direct"],
+      default: "group",
     },
     name: {
       type: String,

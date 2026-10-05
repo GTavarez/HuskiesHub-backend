@@ -1,6 +1,6 @@
 const express = require("express");
 const multer = require("multer");
-const { getTeamMessages, runChatDigestCron } = require("./controller");
+const controller = require("./controller");
 const { sendPhotoMessage, getMessagePhoto, SAFE_IMAGE_TYPES } = require("./photoController");
 const auth = require("../../common/middlewares/auth");
 
@@ -30,14 +30,25 @@ function acceptPhoto(req, res, next) {
 
 // No user auth — called by Cloud Scheduler, authenticated via CRON_SECRET
 // header inside the handler itself.
-router.post("/run-chat-digest-cron", runChatDigestCron);
+router.post("/run-chat-digest-cron", controller.runChatDigestCron);
 
-// Photos in team chat and group chats. Mounted before /:teamId so "photo"
-// is never mistaken for a team id.
+// Photos in team chat, group chats and game chats. Mounted before /:teamId so
+// "photo" is never mistaken for a team id.
 router.post("/photo", auth, acceptPhoto, sendPhotoMessage);
 router.get("/photo/:messageId", auth, getMessagePhoto);
 
-// GET chat history for a team
-router.get("/:teamId", auth, getTeamMessages);
+// The chat for one game or practice.
+router.get("/event/:eventId", auth, controller.getEventMessages);
+
+// Acting on one message.
+router.patch("/:id", auth, controller.editMessage);
+router.delete("/:id", auth, controller.deleteMessage);
+router.post("/:id/pin", auth, controller.pinMessage);
+router.post("/:id/unpin", auth, controller.unpinMessage);
+router.post("/:id/react", auth, controller.reactToMessage);
+router.post("/:id/report", auth, controller.reportMessage);
+
+// GET chat history for a team (newest 50; ?before=<messageId> for older)
+router.get("/:teamId", auth, controller.getTeamMessages);
 
 module.exports = router;

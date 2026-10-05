@@ -1,88 +1,87 @@
-const mongoose = require("mongoose");
-const Message = require("../modules/messages/model");
-const Conversation = require("../modules/conversations/model");
-const { canAccessTeam, canAccessConversation } = require("../common/utils/ownership");
+const { resolveRoom } = require("../common/utils/chatRooms");
+const { ChatError, createMessage } = require("../modules/chat/chatService");
+
+// At most this many messages per socket in the window below, so one runaway
+// client can't flood a team's chat.
+const RATE_LIMIT_COUNT = 10;
+const RATE_LIMIT_WINDOW_MS = 10 * 1000;
 
 module.exports = (io) => {
   io.on("connection", async (socket) => {
     const { user } = socket.data;
-    const requestedTeamId = socket.handshake.auth?.teamId;
-    const requestedConversationId = socket.handshake.auth?.conversationId;
+    const auth = socket.handshake.auth || {};
+    const params = {
+      teamId: auth.teamId,
+      conversationId: auth.conversationId,
+      eventId: auth.eventId,
+    };
 
-    // Two mutually exclusive room kinds on one connection: the original
-    // whole-team room (teamId), or a coach-created group chat
-    // (conversationId) — a client picks exactly one per socket, same as it
-    // already did for teamId alone.
-    if (requestedConversationId) {
-      if (!mongoose.Types.ObjectId.isValid(requestedConversationId)) {
-        console.log("❌ Invalid conversationId, disconnecting");
-        socket.disconnect();
-        return;
-      }
+    let room;
+    try {
+      room = await resolveRoom(user, params);
+    } catch (err) {
+      console.warn("Chat room lookup failed:", err.message);
+    }
+    if (!room) {
+      console.log(`❌ ${user.name} denied access to a chat room`);
+      socket.disconnect();
+      return;
+    }
 
-      const conversation = await Conversation.findById(requestedConversationId).lean();
-      if (!conversation || !canAccessConversation(user, conversation)) {
-        console.log(`❌ ${user.name} denied access to conversation ${requestedConversationId}`);
-        socket.disconnect();
-        return;
-      }
+    // Room membership is based on the room the client asked to join, never the
+    // connecting user's own teamId — admin/parent/college_coach accounts aren't
+    // tied to a single team. resolveRoom re-validates server-side.
+    socket.join(room.socketRoom);
+    // eslint-disable-next-line no-param-reassign
+    socket.data.visible = true;
+    console.log(`🟢 ${user.name} joined ${room.key}`);
 
-      const room = `conversation:${requestedConversationId}`;
-      socket.join(room);
-      console.log(`🟢 ${user.name} joined conversation ${requestedConversationId}`);
+    // The page tells us when its tab is hidden, so a message sent while it is
+    // in the background still triggers a push.
+    socket.on("visibility", (visible) => {
+      // eslint-disable-next-line no-param-reassign
+      socket.data.visible = Boolean(visible);
+    });
 
-      socket.on("send-message", async (text) => {
-        if (!text || !text.trim()) return;
+    const sentAt = [];
 
-        const message = await Message.create({
-          teamId: conversation.teamId,
-          conversationId: requestedConversationId,
-          senderId: user._id,
-          senderName: user.name,
-          text,
+    // payload is { text, replyToId, mentions, urgent }; a bare string (older
+    // clients) is treated as just the text. The optional ack reports success or
+    // the reason it failed, so the sender is never left wondering.
+    socket.on("send-message", async (payload, ack) => {
+      const reply = typeof ack === "function" ? ack : () => {};
+      try {
+        const now = Date.now();
+        while (sentAt.length && now - sentAt[0] > RATE_LIMIT_WINDOW_MS) sentAt.shift();
+        if (sentAt.length >= RATE_LIMIT_COUNT) {
+          throw new ChatError(429, "You're sending messages too fast. Wait a few seconds.");
+        }
+        sentAt.push(now);
+
+        const body = typeof payload === "string" ? { text: payload } : payload || {};
+        // Looked up again each time so a change since joining (removed from a
+        // group, or the chat turned announcements-only) takes effect right away.
+        const current = await resolveRoom(user, params);
+        if (!current) throw new ChatError(403, "You no longer have access to this chat.");
+
+        const message = await createMessage({
+          io,
+          room: current,
+          user,
+          text: body.text,
+          replyToId: body.replyToId,
+          mentionIds: body.mentions,
+          urgent: body.urgent,
         });
+        reply({ ok: true, message });
+      } catch (err) {
+        if (!(err instanceof ChatError)) console.error("Send message error:", err);
+        reply({ ok: false, error: err instanceof ChatError ? err.message : "Couldn't send that message." });
+      }
+    });
 
-        io.to(room).emit("new-message", message);
-      });
-
-      socket.on("disconnect", () => {
-        console.log(`🔴 ${user.name} disconnected`);
-      });
-      return;
-    }
-
-    if (!requestedTeamId) {
-      console.log("❌ No teamId or conversationId provided, disconnecting");
-      socket.disconnect();
-      return;
-    }
-
-    // Room membership is based on the team the client asked to join, never
-    // the connecting user's own teamId — admin/parent/college_coach accounts
-    // aren't tied to a single team, so trusting only user.teamId here would
-    // lock them out of chat entirely. canAccessTeam re-validates server-side.
-    if (!(await canAccessTeam(user, requestedTeamId))) {
-      console.log(`❌ ${user.name} denied access to team ${requestedTeamId}`);
-      socket.disconnect();
-      return;
-    }
-
-    const teamRoom = requestedTeamId.toString();
-    socket.join(teamRoom);
-
-    console.log(`🟢 ${user.name} joined team ${teamRoom}`);
-
-    socket.on("send-message", async (text) => {
-      if (!text || !text.trim()) return;
-
-      const message = await Message.create({
-        teamId: requestedTeamId,
-        senderId: user._id,
-        senderName: user.name,
-        text,
-      });
-
-      io.to(teamRoom).emit("new-message", message);
+    socket.on("typing", () => {
+      socket.to(room.socketRoom).emit("typing", { userId: String(user._id), name: user.name });
     });
 
     socket.on("disconnect", () => {

@@ -5,6 +5,15 @@ const User = require("../users/model");
 const { getTransporter } = require("../../common/utils/mailer");
 const { findTeamContacts, withScheduleWatchers } = require("../../common/utils/teamContacts");
 const { rememberOption } = require("../saved-options/controller");
+const { pushToUsers } = require("../chat/pushService");
+
+// Same people who get the email also get a push, so a change reaches them
+// straight away instead of waiting for them to check their inbox.
+const pushEvent = (contacts, event, title, body) =>
+  pushToUsers(
+    contacts.map((user) => user._id),
+    { title, body, url: `/teams/${event.teamId}?event=${event._id}`, tag: `event:${event._id}`, urgent: true }
+  );
 
 // Cloud Run's default timezone is UTC, so a plain toLocaleString() renders
 // event times 4-5 hours off from what's actually in the schedule (e.g. a
@@ -189,6 +198,12 @@ async function notifyEventCreated(event) {
           .catch((err) => console.warn("New event email not sent:", err.message))
       )
     );
+    await pushEvent(
+      contacts,
+      event,
+      `New ${event.type}: ${event.title}`,
+      `${formatEventTime(event.startsAt)}${event.location ? ` · ${event.location}` : ""}`
+    );
   } catch (err) {
     console.warn("New event notification skipped:", err.message);
   }
@@ -242,6 +257,7 @@ async function notifyEventUpdated(before, after) {
           .catch((err) => console.warn("Event update email not sent:", err.message))
       )
     );
+    await pushEvent(contacts, after, `Updated: ${after.title}`, changes.join(" · "));
   } catch (err) {
     console.warn("Event update notification skipped:", err.message);
   }
@@ -354,6 +370,12 @@ async function notifyEventCancelled(event) {
           })
           .catch((err) => console.warn("Cancellation email not sent:", err.message))
       )
+    );
+    await pushEvent(
+      contacts,
+      event,
+      `Cancelled: ${event.title}`,
+      `${formatEventTime(event.startsAt)} has been cancelled.`
     );
   } catch (err) {
     console.warn("Event cancellation notification skipped:", err.message);
