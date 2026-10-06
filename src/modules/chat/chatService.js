@@ -142,14 +142,16 @@ async function notifyRoomMembers({ io, room, message, sender }) {
   }
 }
 
-// Admins hear about every parent and player message in a team or game chat,
-// by email and text, whichever team it is and whether or not they muted the
-// chat. Private group and direct chats are left out. Nothing goes to the
+// Admins get an email for every parent and player message in a team or game
+// chat, whichever team it is and whether or not they muted the chat, and a text
+// for urgent messages. Private group and direct chats are left out. Nothing goes to the
 // sender, to an admin already looking at the chat, or to test accounts.
 async function alertAdmins({ io, room, message, sender }) {
   if (!["team", "event"].includes(room.type)) return;
-  if (!["parent", "player"].includes(sender.role)) return;
   if (sender.isTestAccount) return;
+  const emailIt = ["parent", "player"].includes(sender.role);
+  const textIt = Boolean(message.urgent);
+  if (!emailIt && !textIt) return;
 
   const [admins, present] = await Promise.all([
     User.find({ role: "admin", isTestAccount: { $ne: true } }).select("name email phone").lean(),
@@ -175,7 +177,7 @@ async function alertAdmins({ io, room, message, sender }) {
 
   await Promise.all(
     targets.flatMap((admin) => [
-      transporter && admin.email
+      emailIt && transporter && admin.email
         ? transporter
             .sendMail({
               from,
@@ -193,7 +195,7 @@ async function alertAdmins({ io, room, message, sender }) {
             })
             .catch((err) => console.warn("Admin chat email not sent:", err.message))
         : null,
-      admin.phone
+      textIt && admin.phone
         ? sendSms(admin.phone, `${sender.name} in ${title}: ${excerpt(preview, 100)} ${link}`)
         : null,
     ])
