@@ -1,10 +1,12 @@
 const mongoose = require("mongoose");
 const Message = require("../messages/model");
 const Team = require("../teams/model");
+const User = require("../users/model");
 const ChatRoomState = require("./roomState.model");
 const { pushToUsers } = require("./pushService");
 const { getRoomMembers, roomFilter } = require("../../common/utils/chatRooms");
 const { getTransporter } = require("../../common/utils/mailer");
+const { sendSms } = require("../../common/utils/sms");
 
 const MAX_TEXT_LENGTH = 2000;
 const MAX_MENTIONS = 20;
@@ -140,6 +142,64 @@ async function notifyRoomMembers({ io, room, message, sender }) {
   }
 }
 
+// Admins hear about every parent and player message in a team or game chat,
+// by email and text, whichever team it is and whether or not they muted the
+// chat. Private group and direct chats are left out. Nothing goes to the
+// sender, to an admin already looking at the chat, or to test accounts.
+async function alertAdmins({ io, room, message, sender }) {
+  if (!["team", "event"].includes(room.type)) return;
+  if (!["parent", "player"].includes(sender.role)) return;
+  if (sender.isTestAccount) return;
+
+  const [admins, present] = await Promise.all([
+    User.find({ role: "admin", isTestAccount: { $ne: true } }).select("name email phone").lean(),
+    presentUserIds(io, room.socketRoom),
+  ]);
+  const targets = admins.filter(
+    (a) => String(a._id) !== String(sender._id) && !present.has(String(a._id))
+  );
+  if (targets.length === 0) return;
+
+  const title = await roomTitle(room, sender);
+  const preview = message.text || "[Photo]";
+  const baseUrl = process.env.FRONTEND_URL || "https://eshuskiesyoffee.com";
+  const link = `${baseUrl}${roomUrl(room)}`;
+
+  let transporter = null;
+  try {
+    transporter = getTransporter();
+  } catch (err) {
+    console.warn("Admin chat email skipped:", err.message);
+  }
+  const from = process.env.CONTACT_FROM_EMAIL || process.env.SMTP_USER;
+
+  await Promise.all(
+    targets.flatMap((admin) => [
+      transporter && admin.email
+        ? transporter
+            .sendMail({
+              from,
+              to: admin.email,
+              subject: `${sender.name} in ${title}: ${excerpt(preview, 60)}`,
+              text: [
+                `Hi ${admin.name},`,
+                "",
+                `${sender.name} (${sender.role}) wrote in ${title}:`,
+                "",
+                preview,
+                "",
+                `Open the chat: ${link}`,
+              ].join("\n"),
+            })
+            .catch((err) => console.warn("Admin chat email not sent:", err.message))
+        : null,
+      admin.phone
+        ? sendSms(admin.phone, `${sender.name} in ${title}: ${excerpt(preview, 100)} ${link}`)
+        : null,
+    ])
+  );
+}
+
 // The single place a message is created, so the socket handler and the photo
 // upload enforce the same rules.
 async function createMessage({ io, room, user, text, replyToId, mentionIds, urgent, imageId }) {
@@ -208,6 +268,9 @@ async function createMessage({ io, room, user, text, replyToId, mentionIds, urge
 
   notifyRoomMembers({ io, room, message, sender: user }).catch((err) =>
     console.warn("Chat notification failed:", err.message)
+  );
+  alertAdmins({ io, room, message, sender: user }).catch((err) =>
+    console.warn("Admin chat alert failed:", err.message)
   );
   return payload;
 }
