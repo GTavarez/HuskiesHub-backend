@@ -73,6 +73,8 @@ const messageSchema = new mongoose.Schema(
     mentions: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     // Coach/admin only: also sent by email right away, ignoring mute.
     urgent: { type: Boolean, default: false },
+    // Parent only: alerts the coaches and admins, but not the other families.
+    flagged: { type: Boolean, default: false },
     editedAt: { type: Date, default: null },
     // Deleting keeps the row (so replies and moderation records still make
     // sense) but clears its content.

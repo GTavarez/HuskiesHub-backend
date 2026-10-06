@@ -7,10 +7,12 @@ const { pushToUsers } = require("./pushService");
 const { getRoomMembers, roomFilter } = require("../../common/utils/chatRooms");
 const { getTransporter } = require("../../common/utils/mailer");
 const { sendSms } = require("../../common/utils/sms");
+const { findUrgentWord } = require("./urgentWords");
 
 const MAX_TEXT_LENGTH = 2000;
 const MAX_MENTIONS = 20;
 const MAX_URGENT_PER_HOUR = 3;
+const MAX_FLAGS_PER_HOUR = 3;
 const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "🙏", "🥎"];
 
@@ -117,9 +119,11 @@ async function notifyRoomMembers({ io, room, message, sender }) {
   const mentioned = new Set((message.mentions || []).map(String));
   const now = Date.now();
 
+  const isStaff = (m) => ["coach", "admin"].includes(m.role);
   const pushTargets = recipients.filter((m) => {
     const id = String(m._id);
     if (present.has(id)) return false;
+    if (message.flagged && isStaff(m)) return false; // gets the flagged push below
     const muted = mutedUntil.get(id) && new Date(mutedUntil.get(id)).getTime() > now;
     return !muted || mentioned.has(id) || message.urgent;
   });
@@ -137,20 +141,38 @@ async function notifyRoomMembers({ io, room, message, sender }) {
     }
   );
 
+  if (message.flagged) {
+    const staff = recipients.filter((m) => isStaff(m) && !present.has(String(m._id)));
+    await pushToUsers(
+      staff.map((m) => m._id),
+      {
+        title: `Flagged: ${title}`,
+        body: `${sender.name}: ${excerpt(preview, 140)}`,
+        url: roomUrl(room),
+        tag: room.key,
+        urgent: true,
+      }
+    );
+  }
+
   if (message.urgent) {
     await sendUrgentEmails(recipients, sender, title, preview, room);
   }
 }
 
 // Admins get an email for every parent and player message in a team or game
-// chat, whichever team it is and whether or not they muted the chat, and a text
-// for urgent messages. Private group and direct chats are left out. Nothing goes to the
-// sender, to an admin already looking at the chat, or to test accounts.
+// chat, whichever team it is and whether or not they muted the chat. They also
+// get a text when the message is urgent, when a parent flagged it, or when it
+// contains one of the words in urgentWords.js. Private group and direct chats
+// are left out. Nothing goes to the sender, to an admin already looking at the
+// chat, or to test accounts.
 async function alertAdmins({ io, room, message, sender }) {
   if (!["team", "event"].includes(room.type)) return;
   if (sender.isTestAccount) return;
   const emailIt = ["parent", "player"].includes(sender.role);
-  const textIt = Boolean(message.urgent);
+  const keyword = emailIt ? findUrgentWord(message.text) : null;
+  const reason = message.urgent ? "Urgent" : message.flagged ? "Flagged" : keyword ? "Possible emergency" : "";
+  const textIt = Boolean(reason);
   if (!emailIt && !textIt) return;
 
   const [admins, present] = await Promise.all([
@@ -182,7 +204,7 @@ async function alertAdmins({ io, room, message, sender }) {
             .sendMail({
               from,
               to: admin.email,
-              subject: `${sender.name} in ${title}: ${excerpt(preview, 60)}`,
+              subject: `${reason ? `${reason}: ` : ""}${sender.name} in ${title}: ${excerpt(preview, 60)}`,
               text: [
                 `Hi ${admin.name},`,
                 "",
@@ -196,7 +218,7 @@ async function alertAdmins({ io, room, message, sender }) {
             .catch((err) => console.warn("Admin chat email not sent:", err.message))
         : null,
       textIt && admin.phone
-        ? sendSms(admin.phone, `${sender.name} in ${title}: ${excerpt(preview, 100)} ${link}`)
+        ? sendSms(admin.phone, `${reason}: ${sender.name} in ${title}: ${excerpt(preview, 100)} ${link}`)
         : null,
     ])
   );
@@ -204,7 +226,7 @@ async function alertAdmins({ io, room, message, sender }) {
 
 // The single place a message is created, so the socket handler and the photo
 // upload enforce the same rules.
-async function createMessage({ io, room, user, text, replyToId, mentionIds, urgent, imageId }) {
+async function createMessage({ io, room, user, text, replyToId, mentionIds, urgent, flag, imageId }) {
   const cleanText = typeof text === "string" ? text.trim() : "";
   if (!cleanText && !imageId) throw new ChatError(400, "Write a message first.");
   if (cleanText.length > MAX_TEXT_LENGTH) {
@@ -239,7 +261,8 @@ async function createMessage({ io, room, user, text, replyToId, mentionIds, urge
   let isUrgent = false;
   if (urgent) {
     if (!room.moderator) throw new ChatError(403, "Only coaches and admins can send urgent messages.");
-    const recent = await Message.countDocuments({
+    // Test accounts never send real alerts, so the cap would only get in the way of testing.
+    const recent = user.isTestAccount ? 0 : await Message.countDocuments({
       senderId: user._id,
       urgent: true,
       createdAt: { $gt: new Date(Date.now() - 60 * 60 * 1000) },
@@ -248,6 +271,24 @@ async function createMessage({ io, room, user, text, replyToId, mentionIds, urge
       throw new ChatError(429, "You've sent several urgent messages this hour. Try again later.");
     }
     isUrgent = true;
+  }
+
+  // A parent can flag a message for the coaches and admins. It alerts staff,
+  // not the other families.
+  let isFlagged = false;
+  if (flag && !isUrgent) {
+    if (user.role !== "parent" || !["team", "event"].includes(room.type)) {
+      throw new ChatError(403, "Only parents can flag a message in a team or game chat.");
+    }
+    const recentFlags = user.isTestAccount ? 0 : await Message.countDocuments({
+      senderId: user._id,
+      flagged: true,
+      createdAt: { $gt: new Date(Date.now() - 60 * 60 * 1000) },
+    });
+    if (recentFlags >= MAX_FLAGS_PER_HOUR) {
+      throw new ChatError(429, "You've flagged several messages this hour. Try again later.");
+    }
+    isFlagged = true;
   }
 
   const message = await Message.create({
@@ -263,6 +304,7 @@ async function createMessage({ io, room, user, text, replyToId, mentionIds, urge
     replyTo,
     mentions,
     urgent: isUrgent,
+    flagged: isFlagged,
   });
 
   const payload = toClient(message);

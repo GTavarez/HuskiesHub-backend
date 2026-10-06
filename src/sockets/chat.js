@@ -72,6 +72,7 @@ module.exports = (io) => {
           replyToId: body.replyToId,
           mentionIds: body.mentions,
           urgent: body.urgent,
+          flag: body.flag,
         });
         reply({ ok: true, message });
       } catch (err) {
