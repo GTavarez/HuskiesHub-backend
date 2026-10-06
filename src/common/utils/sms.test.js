@@ -20,7 +20,7 @@ test("sending is a quiet no-op until Brevo texting is configured", async () => {
   assert.equal(await sendSms("5551234567", "hi"), false);
 });
 
-test("only opted-in parents with a number get a text, once per number, with the STOP note", async () => {
+test("only opted-in parents with a number get a text, once per number, with the HELP and STOP note", async () => {
   process.env.BREVO_API_KEY = "test-key";
   process.env.BREVO_SMS_SENDER = "TestSender";
   const calls = [];
@@ -45,7 +45,7 @@ test("only opted-in parents with a number get a text, once per number, with the 
     );
     assert.equal(sent, 2);
     assert.deepEqual(calls.map((c) => c.recipient).sort(), ["15551234567", "15556660000"]);
-    assert.ok(calls.every((c) => c.content.endsWith("Reply STOP to opt out.")));
+    assert.ok(calls.every((c) => c.content.endsWith("Reply HELP for help, STOP to cancel.")));
     assert.ok(calls.every((c) => c.content.length <= 160));
   } finally {
     global.fetch = realFetch;

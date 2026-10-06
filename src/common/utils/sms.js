@@ -49,7 +49,7 @@ async function sendSms(phone, content) {
   }
 }
 
-const OPT_OUT_NOTE = " Reply STOP to opt out.";
+const OPT_OUT_NOTE = " Reply HELP for help, STOP to cancel.";
 
 const clip = (text, max) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
