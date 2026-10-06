@@ -6,7 +6,7 @@ const ChatRoomState = require("./roomState.model");
 const { pushToUsers } = require("./pushService");
 const { getRoomMembers, roomFilter } = require("../../common/utils/chatRooms");
 const { getTransporter } = require("../../common/utils/mailer");
-const { sendSms } = require("../../common/utils/sms");
+const { sendSms, textOptedInParents } = require("../../common/utils/sms");
 const { findUrgentWord } = require("./urgentWords");
 
 const MAX_TEXT_LENGTH = 2000;
@@ -157,6 +157,16 @@ async function notifyRoomMembers({ io, room, message, sender }) {
 
   if (message.urgent) {
     await sendUrgentEmails(recipients, sender, title, preview, room);
+
+    // Parents who opted in also get a text, for team and game chats only.
+    if (["team", "event"].includes(room.type)) {
+      const parents = await User.find({
+        _id: { $in: recipients.map((m) => m._id) },
+        role: "parent",
+        smsOptIn: true,
+      }).select("phone role smsOptIn isTestAccount");
+      await textOptedInParents(parents, `Huskies URGENT from ${sender.name}: ${excerpt(preview, 90)}`);
+    }
   }
 }
 

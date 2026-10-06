@@ -6,6 +6,7 @@ const { getTransporter } = require("../../common/utils/mailer");
 const { findTeamContacts, withScheduleWatchers } = require("../../common/utils/teamContacts");
 const { rememberOption } = require("../saved-options/controller");
 const { pushToUsers } = require("../chat/pushService");
+const { textOptedInParents } = require("../../common/utils/sms");
 
 // Same people who get the email also get a push, so a change reaches them
 // straight away instead of waiting for them to check their inbox.
@@ -258,6 +259,12 @@ async function notifyEventUpdated(before, after) {
       )
     );
     await pushEvent(contacts, after, `Updated: ${after.title}`, changes.join(" · "));
+
+    // A text only when the time or place moved. A title-only edit isn't worth one.
+    const moved = changes.filter((c) => !c.startsWith("Title:"));
+    if (moved.length > 0) {
+      await textOptedInParents(contacts, `Huskies: ${after.title} changed. ${moved.join("; ")}`);
+    }
   } catch (err) {
     console.warn("Event update notification skipped:", err.message);
   }
@@ -376,6 +383,10 @@ async function notifyEventCancelled(event) {
       event,
       `Cancelled: ${event.title}`,
       `${formatEventTime(event.startsAt)} has been cancelled.`
+    );
+    await textOptedInParents(
+      contacts,
+      `Huskies: CANCELLED. ${event.title}, ${formatEventTime(event.startsAt)}.`
     );
   } catch (err) {
     console.warn("Event cancellation notification skipped:", err.message);

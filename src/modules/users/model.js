@@ -100,6 +100,11 @@ const userSchema = new mongoose.Schema({
     default: null,
     select: false,
   },
+  // A parent's own opt-in to texts about schedule changes, cancellations and
+  // urgent messages. Off until they tick the box in their profile, and it needs
+  // a mobile number on file.
+  smsOptIn: { type: Boolean, default: false },
+  smsOptInAt: { type: Date, default: null },
   role: {
     type: String,
     enum: ["player", "coach", "admin", "fan", "parent", "college_coach"],

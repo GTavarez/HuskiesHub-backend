@@ -4,6 +4,7 @@ const mongoose = require("mongoose");
 const crypto = require("crypto");
 const { getBucket } = require("../../common/utils/gridfs");
 const { getTransporter } = require("../../common/utils/mailer");
+const { toRecipient } = require("../../common/utils/sms");
 
 const User = require("./model");
 
@@ -183,6 +184,7 @@ const getCurrentUser = async (req, res) => {
       name: user.name,
       email: user.email,
       phone: user.phone,
+      smsOptIn: Boolean(user.smsOptIn),
       bio: user.bio,
       avatar: user.avatar,
       teamId: user.teamId,
@@ -203,11 +205,25 @@ const getCurrentUser = async (req, res) => {
 };
 
 const updateUserProfile = async (req, res) => {
-  const { name, avatar, phone, bio, coachTitle } = req.body;
+  const { name, avatar, phone, bio, coachTitle, smsOptIn } = req.body;
   const { _id: userId } = req.user;
 
   const updates = { name, avatar };
   if (phone !== undefined) updates.phone = phone;
+
+  // Texts need a real mobile number. Turning them on without one is refused,
+  // and clearing or breaking the number turns them off.
+  const nextPhone = phone !== undefined ? phone : req.user.phone;
+  const hasNumber = Boolean(toRecipient(nextPhone));
+  if (smsOptIn === true) {
+    if (!hasNumber) {
+      return res.status(400).send({ message: "Add a 10-digit mobile number to get texts." });
+    }
+    updates.smsOptIn = true;
+    if (!req.user.smsOptIn) updates.smsOptInAt = new Date();
+  } else if (smsOptIn === false || (phone !== undefined && !hasNumber)) {
+    updates.smsOptIn = false;
+  }
   if (bio !== undefined) updates.bio = bio;
   if (coachTitle !== undefined) updates.coachTitle = coachTitle;
 
@@ -224,6 +240,7 @@ const updateUserProfile = async (req, res) => {
         name: updatedUser.name,
         email: updatedUser.email,
         phone: updatedUser.phone,
+        smsOptIn: updatedUser.smsOptIn,
         bio: updatedUser.bio,
         coachTitle: updatedUser.coachTitle,
         avatar: updatedUser.avatar,

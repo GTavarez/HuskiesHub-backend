@@ -49,4 +49,27 @@ async function sendSms(phone, content) {
   }
 }
 
-module.exports = { isSmsConfigured, sendSms, toRecipient };
+const OPT_OUT_NOTE = " Reply STOP to opt out.";
+
+const clip = (text, max) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+
+// Texts the parents in `users` who opted in and have a number, once per phone
+// number, never test accounts. Keep `message` short: every 160 characters
+// costs a credit. Returns how many were accepted.
+async function textOptedInParents(users, message) {
+  if (!isSmsConfigured()) return 0;
+  const seen = new Set();
+  const phones = [];
+  for (const user of users || []) {
+    if (user.role !== "parent" || !user.smsOptIn || user.isTestAccount) continue;
+    const recipient = toRecipient(user.phone);
+    if (!recipient || seen.has(recipient)) continue;
+    seen.add(recipient);
+    phones.push(user.phone);
+  }
+  const body = `${clip(message, 160 - OPT_OUT_NOTE.length)}${OPT_OUT_NOTE}`;
+  const results = await Promise.all(phones.map((phone) => sendSms(phone, body)));
+  return results.filter(Boolean).length;
+}
+
+module.exports = { isSmsConfigured, sendSms, toRecipient, textOptedInParents, clip };
