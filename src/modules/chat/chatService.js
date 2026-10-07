@@ -207,6 +207,18 @@ async function alertAdmins({ io, room, message, sender }) {
   }
   const from = process.env.CONTACT_FROM_EMAIL || process.env.SMTP_USER;
 
+  // Admins who turned on notifications on a device also get a push, right away.
+  await pushToUsers(
+    targets.map((a) => a._id),
+    {
+      title: reason ? `${reason}: ${title}` : title,
+      body: `${sender.name}: ${excerpt(preview, 140)}`,
+      url: roomUrl(room),
+      tag: `admin-${room.key}`,
+      urgent: Boolean(reason),
+    }
+  );
+
   await Promise.all(
     targets.flatMap((admin) => [
       emailIt && transporter && admin.email
