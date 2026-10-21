@@ -552,9 +552,11 @@ async function handlePaymentIntentFailed(paymentIntent) {
 async function handleChargeRefunded(charge) {
   const payment = await Payment.findOne({ stripePaymentIntentId: charge.payment_intent });
   if (!payment) return;
-  payment.status = "refunded";
   payment.refundedAmountCents = charge.amount_refunded;
   payment.refundedAt = new Date();
+  // Only a full refund closes the payment. A partial one leaves it open so the
+  // rest can still be refunded later.
+  payment.status = charge.amount_refunded >= payment.amountCents ? "refunded" : "succeeded";
   await payment.save();
 }
 
@@ -770,24 +772,46 @@ const refundPayment = async (req, res) => {
       return res.status(400).json({ message: "Only succeeded payments can be refunded" });
     }
 
+    // Ask Stripe how much of this payment has already been refunded. Our own
+    // record can lag behind (a refund is only recorded once Stripe's webhook
+    // arrives), so Stripe is what stops the same payment being refunded twice.
+    const stripe = getStripeClient();
+    const intent = await stripe.paymentIntents.retrieve(payment.stripePaymentIntentId, {
+      expand: ["latest_charge"],
+    });
+    const alreadyRefundedCents = Math.max(
+      intent.latest_charge?.amount_refunded ?? 0,
+      payment.refundedAmountCents || 0
+    );
+    const remainingCents = payment.amountCents - alreadyRefundedCents;
+
+    if (remainingCents <= 0) {
+      return res.status(400).json({ message: "This payment has already been fully refunded." });
+    }
     // A partial refund can't be more than what's left of the payment.
     if (amountCents !== undefined) {
-      const remainingCents = payment.amountCents - (payment.refundedAmountCents || 0);
       if (!Number.isInteger(amountCents) || amountCents <= 0 || amountCents > remainingCents) {
         return res.status(400).json({
-          message: `Refund amount must be between 1 cent and ${remainingCents} cents.`,
+          message: `Refund amount must be between 1 cent and ${remainingCents} cents. ${alreadyRefundedCents} cents were already refunded.`,
         });
       }
     }
 
-    const stripe = getStripeClient();
+    const refundCents = amountCents || remainingCents;
     await stripe.refunds.create({
       payment_intent: payment.stripePaymentIntentId,
-      ...(amountCents ? { amount: amountCents } : {}),
+      amount: refundCents,
     });
 
-    // Status/refundedAmountCents/refundedAt are set by the charge.refunded
-    // webhook, not here — Stripe stays the single source of truth.
+    // Record it now so the dashboard shows it straight away and a second click
+    // is caught. The charge.refunded webhook, if Stripe sends it, writes the
+    // same totals again.
+    const totalRefundedCents = alreadyRefundedCents + refundCents;
+    payment.refundedAmountCents = totalRefundedCents;
+    payment.refundedAt = new Date();
+    payment.status = totalRefundedCents >= payment.amountCents ? "refunded" : "succeeded";
+    await payment.save();
+
     return res.status(202).json({ message: "Refund initiated" });
   } catch (err) {
     console.error("Refund payment error:", err);
