@@ -770,6 +770,16 @@ const refundPayment = async (req, res) => {
       return res.status(400).json({ message: "Only succeeded payments can be refunded" });
     }
 
+    // A partial refund can't be more than what's left of the payment.
+    if (amountCents !== undefined) {
+      const remainingCents = payment.amountCents - (payment.refundedAmountCents || 0);
+      if (!Number.isInteger(amountCents) || amountCents <= 0 || amountCents > remainingCents) {
+        return res.status(400).json({
+          message: `Refund amount must be between 1 cent and ${remainingCents} cents.`,
+        });
+      }
+    }
+
     const stripe = getStripeClient();
     await stripe.refunds.create({
       payment_intent: payment.stripePaymentIntentId,
