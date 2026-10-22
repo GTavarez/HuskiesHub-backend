@@ -39,6 +39,13 @@ const paymentSchema = new mongoose.Schema(
     // Only set for type: "autopay", e.g. "2026-03" — the double-charge guard below
     // relies on this plus relatedRegistrationId being unique per billing period.
     billingPeriod: { type: String, default: null },
+    // "offline" = money received outside the site (e.g. the old system) that an
+    // admin recorded by hand. It counts toward the registration balance but has
+    // no Stripe charge, so it can't be refunded here, and the QuickBooks export
+    // leaves it out (the money was already booked where it was received).
+    method: { type: String, enum: ["stripe", "offline"], default: "stripe" },
+    note: { type: String, default: "" },
+    recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     refundedAmountCents: { type: Number, default: 0 },
     refundedAt: { type: Date, default: null },
   },

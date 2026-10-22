@@ -821,6 +821,56 @@ const refundPayment = async (req, res) => {
 
 // ---- Balance & history --------------------------------------------------
 
+// Admin-only. Records money that was received outside the site, such as a
+// registration fee paid on the old system, so the family's balance is right and
+// their monthly payment plan opens up. Never charges anyone.
+const recordOfflinePayment = async (req, res) => {
+  const { registrationId, amountCents, note } = req.body;
+
+  if (!registrationId || !mongoose.Types.ObjectId.isValid(registrationId)) {
+    return res.status(400).json({ message: "Valid registrationId is required" });
+  }
+  if (!Number.isInteger(amountCents) || amountCents <= 0) {
+    return res.status(400).json({ message: "amountCents must be a whole number above zero" });
+  }
+  const cleanNote = typeof note === "string" ? note.trim() : "";
+  if (!cleanNote || cleanNote.length > 200) {
+    return res.status(400).json({ message: "A note (up to 200 characters) is required" });
+  }
+
+  try {
+    const registration = await Registration.findById(registrationId);
+    if (!registration) return res.status(404).json({ message: "Registration not found" });
+    if (registration.status === "withdrawn") {
+      return res.status(400).json({ message: "This registration is withdrawn" });
+    }
+
+    const { balanceCents } = await computeRegistrationBalance(registration);
+    if (amountCents > balanceCents) {
+      return res.status(400).json({
+        message: `That's more than the remaining balance ($${(balanceCents / 100).toFixed(2)}).`,
+      });
+    }
+
+    const isFullFee = amountCents >= registration.registrationFeeCents;
+    const payment = await Payment.create({
+      type: isFullFee ? "registration" : "partialRegistration",
+      userId: registration.billingUserId || registration.createdBy,
+      amountCents,
+      status: "succeeded",
+      description: `${isFullFee ? "registration" : "Partial payment"} — ${registration.season} (offline: ${cleanNote})`,
+      relatedRegistrationId: registration._id,
+      method: "offline",
+      note: cleanNote,
+      recordedBy: req.user._id,
+    });
+    return res.status(201).json(payment);
+  } catch (err) {
+    console.error("Record offline payment error:", err);
+    return res.status(500).json({ message: "Failed to record the payment" });
+  }
+};
+
 const getBalance = async (req, res) => {
   const { playerId } = req.query;
 
@@ -933,6 +983,7 @@ const exportQuickbooksCsv = async (req, res) => {
   try {
     const payments = await Payment.find({
       status: { $in: ["succeeded", "refunded"] },
+      method: { $ne: "offline" },
       createdAt: { $gte: new Date(from), $lte: new Date(to) },
     })
       .populate("userId")
@@ -947,7 +998,8 @@ const exportQuickbooksCsv = async (req, res) => {
         (payment.amountCents / 100).toFixed(2),
       ]);
 
-      if (payment.status === "refunded") {
+      // A refund row for any payment that has been refunded, in full or in part.
+      if (payment.status === "refunded" || payment.refundedAmountCents > 0) {
         rows.push([
           formatDateMMDDYYYY(payment.refundedAt || payment.updatedAt),
           `${label} (refund)`,
@@ -977,6 +1029,7 @@ module.exports = {
   runAutopay,
   runAutopayCron,
   refundPayment,
+  recordOfflinePayment,
   getBalance,
   getPaymentHistory,
   sendReminders,

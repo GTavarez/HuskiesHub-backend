@@ -28,6 +28,7 @@ router.get(
   requireRole("admin", "parent", "player"),
   controller.getPaymentHistory
 );
+router.post("/offline", auth, requireRole("admin"), controller.recordOfflinePayment);
 router.post("/:id/refund", auth, requireRole("admin"), controller.refundPayment);
 router.post("/send-reminders", auth, requireRole("admin"), controller.sendReminders);
 router.get(
