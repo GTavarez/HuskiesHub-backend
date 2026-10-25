@@ -35,6 +35,10 @@ module.exports = (io) => {
     // eslint-disable-next-line no-param-reassign
     socket.data.visible = true;
     console.log(`🟢 ${user.name} joined ${room.key}`);
+    // Tells the page it is now really in the room. Anything changed in the gap
+    // between connecting and joining (a lock, a pin, a message) was missed live,
+    // so the page uses this moment to fetch the latest.
+    socket.emit("room-ready", { roomKey: room.key });
 
     // The page tells us when its tab is hidden, so a message sent while it is
     // in the background still triggers a push.
