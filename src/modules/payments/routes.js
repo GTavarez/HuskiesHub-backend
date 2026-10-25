@@ -29,6 +29,7 @@ router.get(
   controller.getPaymentHistory
 );
 router.post("/offline", auth, requireRole("admin"), controller.recordOfflinePayment);
+router.post("/retry-autopay", auth, requireRole("admin"), controller.retryAutopay);
 router.post("/:id/refund", auth, requireRole("admin"), controller.refundPayment);
 router.post("/send-reminders", auth, requireRole("admin"), controller.sendReminders);
 router.get(

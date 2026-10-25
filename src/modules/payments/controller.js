@@ -7,10 +7,13 @@ const Product = require("../products/model");
 const LessonSlot = require("../lesson-slots/model");
 const User = require("../users/model");
 const Player = require("../players/model");
+const Team = require("../teams/model");
 const Waiver = require("../waivers/model");
 const WaiverSignature = require("../waiver-signatures/model");
 const { canAccessPlayer } = require("../../common/utils/ownership");
 const { getTransporter } = require("../../common/utils/mailer");
+const { pushToUsers } = require("../chat/pushService");
+const { formatAutopaySummary } = require("./autopaySummary");
 
 const TYPES_REQUIRING_REGISTRATION = ["registration", "deposit", "partialRegistration"];
 const TYPES_REQUIRING_PRODUCT = ["camp", "lesson", "apparel"];
@@ -613,7 +616,7 @@ async function notifyAutopayFailure(user, registration, reason) {
 // Processes one registration's autopay charge for the given period. Each
 // registration is independent (own idempotency key, own Payment doc), so the
 // caller runs these concurrently via Promise.all rather than a sequential loop.
-async function processAutopayForRegistration(registration, billingPeriod) {
+async function processAutopayForRegistration(registration, billingPeriod, attempt = 0) {
   let payment;
   try {
     payment = await Payment.create({
@@ -655,7 +658,9 @@ async function processAutopayForRegistration(registration, billingPeriod) {
           billingPeriod,
         },
       },
-      { idempotencyKey: `autopay-${registration._id}-${billingPeriod}` }
+      // A retry after a decline needs a fresh key: Stripe replays the original
+      // answer (the decline) for the same key for 24 hours.
+      { idempotencyKey: `autopay-${registration._id}-${billingPeriod}${attempt ? `-r${attempt}` : ""}` }
     );
 
     payment.stripePaymentIntentId = intent.id;
@@ -720,11 +725,89 @@ async function executeAutopayRun({ respectDayOfMonth }) {
   };
 }
 
+// Tells every admin how a run went: who paid, and who was declined and needs a
+// reminder. Never throws, so a mail problem can't undo the charges themselves.
+async function notifyAdminsOfAutopayRun(result) {
+  try {
+    const ids = [...result.billed, ...result.failed].map((item) => item.registrationId);
+    if (ids.length === 0) return;
+
+    const registrations = await Registration.find({ _id: { $in: ids } });
+    const [players, teams, billingUsers] = await Promise.all([
+      Player.find({ _id: { $in: registrations.map((r) => r.playerId) } }, "name"),
+      Team.find({ _id: { $in: registrations.map((r) => r.teamId) } }, "name"),
+      User.find({ _id: { $in: registrations.map((r) => r.billingUserId).filter(Boolean) } }),
+    ]);
+    const byId = (docs) => new Map(docs.map((d) => [String(d._id), d]));
+    const playerMap = byId(players);
+    const teamMap = byId(teams);
+    const userMap = byId(billingUsers);
+    const regMap = byId(registrations);
+
+    const describe = (registrationId) => {
+      const reg = regMap.get(String(registrationId));
+      if (!reg) return null;
+      const contact = userMap.get(String(reg.billingUserId));
+      // QA accounts never show up in the real admins' summary.
+      if (contact?.isTestAccount) return null;
+      return {
+        player: playerMap.get(String(reg.playerId))?.name || "Unknown player",
+        team: teamMap.get(String(reg.teamId))?.name || "",
+        amountCents: reg.autopayAmountCents,
+        contactName: contact?.name,
+        contactEmail: contact?.email,
+      };
+    };
+
+    const paid = result.billed.map((item) => describe(item.registrationId)).filter(Boolean);
+    const failed = result.failed
+      .map((item) => {
+        const info = describe(item.registrationId);
+        return info ? { ...info, reason: item.reason } : null;
+      })
+      .filter(Boolean);
+    if (paid.length === 0 && failed.length === 0) return;
+
+    const { subject, text, pushBody } = formatAutopaySummary({
+      billingPeriod: result.billingPeriod,
+      paid,
+      failed,
+      baseUrl: process.env.FRONTEND_URL || "",
+    });
+
+    const admins = await User.find({ role: "admin", isTestAccount: { $ne: true } });
+    const transporter = getTransporter();
+    const fromEmail = process.env.CONTACT_FROM_EMAIL || process.env.SMTP_USER;
+    await Promise.all(
+      admins
+        .filter((admin) => admin.email)
+        .map((admin) =>
+          transporter
+            .sendMail({ from: fromEmail, to: admin.email, subject, text })
+            .catch((err) => console.warn("Autopay summary email not sent:", err.message))
+        )
+    );
+    await pushToUsers(
+      admins.map((admin) => admin._id),
+      {
+        title: failed.length ? "Autopay: some payments declined" : "Autopay ran",
+        body: pushBody,
+        url: "/admin",
+        tag: "autopay-summary",
+        urgent: failed.length > 0,
+      }
+    );
+  } catch (err) {
+    console.warn("Autopay summary failed:", err.message);
+  }
+}
+
 // Admin-triggered manual run — ignores day-of-month so an admin can force a
 // catch-up run any day (e.g. if the scheduled cron run failed).
 const runAutopay = async (req, res) => {
   try {
     const result = await executeAutopayRun({ respectDayOfMonth: false });
+    await notifyAdminsOfAutopayRun(result);
     return res.json(result);
   } catch (err) {
     console.error("Run autopay error:", err);
@@ -745,10 +828,67 @@ const runAutopayCron = async (req, res) => {
 
   try {
     const result = await executeAutopayRun({ respectDayOfMonth: true });
+    // Awaited so the summary goes out before the scheduler call finishes.
+    await notifyAdminsOfAutopayRun(result);
     return res.json(result);
   } catch (err) {
     console.error("Run autopay cron error:", err);
     return res.status(500).json({ message: "Autopay cron run failed" });
+  }
+};
+
+// After a declined charge: once the family has fixed their card, an admin can
+// try this month's payment again. The failed attempt stays in the history; it is
+// just moved aside so the month's slot is free for the new attempt.
+const retryAutopay = async (req, res) => {
+  const { registrationId } = req.body;
+
+  if (!registrationId || !mongoose.Types.ObjectId.isValid(registrationId)) {
+    return res.status(400).json({ message: "Valid registrationId is required" });
+  }
+
+  try {
+    const registration = await Registration.findById(registrationId);
+    if (!registration) return res.status(404).json({ message: "Registration not found" });
+    if (registration.status === "withdrawn") {
+      return res.status(400).json({ message: "This registration is withdrawn" });
+    }
+    if (!registration.autopayEnabled || !registration.billingUserId) {
+      return res.status(400).json({ message: "Autopay is not set up for this registration" });
+    }
+    if (registration.autopayInstallmentsCompleted >= registration.autopayTotalInstallments) {
+      return res.status(400).json({ message: "This season is already fully paid" });
+    }
+
+    const billingPeriod = currentBillingPeriod();
+    const existing = await Payment.findOne({
+      relatedRegistrationId: registration._id,
+      type: "autopay",
+      billingPeriod,
+    });
+    if (!existing) {
+      return res.status(400).json({ message: "No payment was attempted this month yet" });
+    }
+    if (existing.status !== "failed") {
+      return res
+        .status(400)
+        .json({ message: `This month's payment is already ${existing.status}. Nothing to retry.` });
+    }
+
+    const previousAttempts = await Payment.countDocuments({
+      relatedRegistrationId: registration._id,
+      type: "autopay",
+      billingPeriod: { $regex: `^${billingPeriod}-failed-` },
+    });
+    const attempt = previousAttempts + 1;
+    existing.billingPeriod = `${billingPeriod}-failed-${attempt}`;
+    await existing.save();
+
+    const result = await processAutopayForRegistration(registration, billingPeriod, attempt);
+    return res.json(result);
+  } catch (err) {
+    console.error("Retry autopay error:", err);
+    return res.status(500).json({ message: "Retry failed" });
   }
 };
 
@@ -1029,6 +1169,7 @@ module.exports = {
   runAutopay,
   runAutopayCron,
   refundPayment,
+  retryAutopay,
   recordOfflinePayment,
   getBalance,
   getPaymentHistory,
