@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Conversation = require("../../modules/conversations/model");
 const Event = require("../../modules/events/model");
 const Player = require("../../modules/players/model");
+const Registration = require("../../modules/registrations/model");
 const User = require("../../modules/users/model");
 const ChatRoomSettings = require("../../modules/chat/roomSettings.model");
 const { canAccessTeam, canAccessConversation } = require("./ownership");
@@ -44,6 +45,10 @@ async function resolveRoom(user, params = {}) {
     if (!isValidId(conversationId)) return null;
     const conversation = await Conversation.findById(conversationId).lean();
     if (!conversation || !canAccessConversation(user, conversation)) return null;
+    // A family taken off the team also loses that team's group chats and DMs.
+    if (["player", "parent"].includes(user.role) && !(await canAccessTeam(user, conversation.teamId))) {
+      return null;
+    }
     const key = `conv:${conversation._id}`;
     const settings = await ChatRoomSettings.findOne({ roomKey: key }).lean();
     return buildRoom(user, {
@@ -110,13 +115,38 @@ function roomFilter(room) {
 // real members for permissions, @mentions and "seen by"; notification code
 // filters them out itself so they never trigger real email or push.
 async function findTeamMembers(teamId) {
-  const players = await Player.find({ teamId, removedFromRoster: { $ne: true } }, "_id");
-  const playerIds = players.map((p) => p._id);
-  return User.find({
-    $or: [{ teamId }, { children: { $in: playerIds } }, { playerId: { $in: playerIds } }],
+  const roster = await Player.find({ teamId }, "_id removedFromRoster").lean();
+  const removedIds = roster.filter((p) => p.removedFromRoster).map((p) => p._id);
+  // Removed players whose family is still enrolled keep their place (see
+  // canAccessTeam in ownership.js); the rest are out.
+  const stillEnrolled = new Set(
+    (removedIds.length
+      ? await Registration.distinct("playerId", { playerId: { $in: removedIds }, status: { $ne: "withdrawn" } })
+      : []
+    ).map(String)
+  );
+  const activeIds = roster
+    .filter((p) => !p.removedFromRoster || stillEnrolled.has(String(p._id)))
+    .map((p) => p._id);
+  const blocked = new Set(removedIds.map(String).filter((id) => !stillEnrolled.has(id)));
+  const activeSet = new Set(activeIds.map(String));
+
+  const users = await User.find({
+    $or: [{ teamId }, { children: { $in: activeIds } }, { playerId: { $in: activeIds } }],
   })
     .select("name email role avatar teamId children playerId isTestAccount")
     .lean();
+
+  return users.filter((u) => {
+    if (u.role === "player") return !(u.playerId && blocked.has(String(u.playerId)));
+    if (u.role === "parent") {
+      const kids = (u.children || []).map(String);
+      const onTeamActive = kids.some((id) => activeSet.has(id));
+      const onTeamBlocked = kids.some((id) => blocked.has(id));
+      return onTeamActive || !onTeamBlocked;
+    }
+    return true;
+  });
 }
 
 // The people who belong in a room (for notifications, @mentions, "seen by").

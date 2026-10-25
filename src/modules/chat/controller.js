@@ -45,12 +45,16 @@ async function requireRoom(req) {
 
 // The teams whose chat this user belongs to.
 async function userTeamIds(user) {
-  if (["player", "coach"].includes(user.role) && user.teamId) return [String(user.teamId)];
+  if (user.role === "coach" && user.teamId) return [String(user.teamId)];
+  let candidates = [];
+  if (user.role === "player" && user.teamId) candidates = [String(user.teamId)];
   if (user.role === "parent" && user.children?.length) {
     const children = await Player.find({ _id: { $in: user.children } }, "teamId").lean();
-    return [...new Set(children.map((c) => String(c.teamId)).filter(Boolean))];
+    candidates = [...new Set(children.map((c) => String(c.teamId)).filter(Boolean))];
   }
-  return [];
+  // A team the person was taken off of no longer counts (same rule as everywhere else).
+  const allowed = await Promise.all(candidates.map((id) => canAccessTeam(user, id)));
+  return candidates.filter((_, index) => allowed[index]);
 }
 
 /**

@@ -1,4 +1,5 @@
 const Player = require("../../modules/players/model");
+const Registration = require("../../modules/registrations/model");
 
 // Verifies a user is allowed to access data scoped to a given playerId.
 // Admin/coach keep the coarser team-based access already used elsewhere in
@@ -41,20 +42,41 @@ async function canAccessPlayerScoped(user, playerId) {
 // canAccessPlayer, the parent branch can't be a pure ID comparison — a
 // parent's own User doc only holds their children's Player ids, not those
 // players' teamIds — so this one needs an actual DB lookup and is async.
+//
+// A player taken off the roster loses the team chat, and so does their family,
+// unless they still have a live (not withdrawn) registration. That exception
+// keeps a family who is still enrolled and paying from being locked out by a
+// roster mix-up. A parent with another child still on the team keeps access.
+async function hasLiveRegistration(playerIds) {
+  if (!playerIds || playerIds.length === 0) return false;
+  return Boolean(await Registration.exists({ playerId: { $in: playerIds }, status: { $ne: "withdrawn" } }));
+}
+
 async function canAccessTeam(user, teamId) {
   if (!user || !teamId) return false;
   if (user.role === "admin") return true;
 
   const targetId = teamId.toString();
 
-  if (["coach", "player"].includes(user.role)) {
+  if (user.role === "coach") {
     return Boolean(user.teamId && user.teamId.toString() === targetId);
+  }
+
+  if (user.role === "player") {
+    if (!(user.teamId && user.teamId.toString() === targetId)) return false;
+    if (!user.playerId) return true;
+    const own = await Player.findById(user.playerId).select("removedFromRoster").lean();
+    if (own && own.removedFromRoster) return hasLiveRegistration([own._id]);
+    return true;
   }
 
   if (user.role === "parent") {
     if (!user.children || user.children.length === 0) return false;
-    const match = await Player.findOne({ _id: { $in: user.children }, teamId });
-    return Boolean(match);
+    const kids = await Player.find({ _id: { $in: user.children }, teamId }).select("removedFromRoster").lean();
+    if (kids.length === 0) return false;
+    const removed = kids.filter((kid) => kid.removedFromRoster).map((kid) => kid._id);
+    if (removed.length < kids.length) return true;
+    return hasLiveRegistration(removed);
   }
 
   return false;
@@ -72,4 +94,10 @@ function canAccessConversation(user, conversation) {
   );
 }
 
-module.exports = { canAccessPlayer, canAccessPlayerScoped, canAccessTeam, canAccessConversation };
+module.exports = {
+  canAccessPlayer,
+  canAccessPlayerScoped,
+  canAccessTeam,
+  canAccessConversation,
+  hasLiveRegistration,
+};
