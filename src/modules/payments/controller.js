@@ -775,20 +775,33 @@ async function notifyAdminsOfAutopayRun(result) {
       baseUrl: process.env.FRONTEND_URL || "",
     });
 
-    const admins = await User.find({ role: "admin", isTestAccount: { $ne: true } });
+    // Only the people named in AUTOPAY_ALERT_EMAILS (comma separated) get this,
+    // not every admin. With nothing configured it goes to no one.
+    const recipients = (process.env.AUTOPAY_ALERT_EMAILS || "")
+      .split(",")
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean);
+    if (recipients.length === 0) {
+      console.warn("Autopay summary not sent: AUTOPAY_ALERT_EMAILS is not set");
+      return;
+    }
+
     const transporter = getTransporter();
     const fromEmail = process.env.CONTACT_FROM_EMAIL || process.env.SMTP_USER;
     await Promise.all(
-      admins
-        .filter((admin) => admin.email)
-        .map((admin) =>
-          transporter
-            .sendMail({ from: fromEmail, to: admin.email, subject, text })
-            .catch((err) => console.warn("Autopay summary email not sent:", err.message))
-        )
+      recipients.map((email) =>
+        transporter
+          .sendMail({ from: fromEmail, to: email, subject, text })
+          .catch((err) => console.warn("Autopay summary email not sent:", err.message))
+      )
     );
+    // A phone notification too, for any of those people who have a site account.
+    const accounts = await User.find({
+      email: { $in: recipients },
+      isTestAccount: { $ne: true },
+    }).select("_id");
     await pushToUsers(
-      admins.map((admin) => admin._id),
+      accounts.map((account) => account._id),
       {
         title: failed.length ? "Autopay: some payments declined" : "Autopay ran",
         body: pushBody,
