@@ -51,6 +51,24 @@ function normalizePhone(value) {
  */
 const createPlayer = async (req, res) => {
   try {
+    // Adding someone who was taken off the roster earlier brings her record back
+    // instead of failing on the "same name and jersey" rule. Her registration,
+    // payments and family links were never removed, so they are still there.
+    const { teamId, name, jersey } = req.body || {};
+    if (teamId && mongoose.Types.ObjectId.isValid(teamId) && typeof name === "string" && name.trim()) {
+      const filter = { teamId, name: { $in: [name, name.trim()] }, removedFromRoster: true };
+      if (jersey !== undefined && jersey !== null && jersey !== "") filter.jersey = jersey;
+      const removed = await Player.findOne(filter);
+      const allowed =
+        removed &&
+        (req.user.role === "admin" || String(req.user.teamId) === String(removed.teamId));
+      if (allowed) {
+        removed.removedFromRoster = false;
+        await removed.save();
+        return res.status(200).json({ ...removed.toObject(), restored: true });
+      }
+    }
+
     const player = await Player.create(req.body);
     return res.status(201).json(player);
   } catch (err) {
