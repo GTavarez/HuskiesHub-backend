@@ -5,6 +5,10 @@ const { canAccessTeam } = require("../../common/utils/ownership");
 const { findTeamMembers, resolveRoom, labelUsers } = require("../../common/utils/chatRooms");
 const { evaluateDirectMessage } = require("./dmPolicy");
 const { listMessages } = require("../chat/chatService");
+const Message = require("../messages/model");
+const ChatRoomState = require("../chat/roomState.model");
+const ChatRoomSettings = require("../chat/roomSettings.model");
+const { getBucket } = require("../../common/utils/gridfs");
 
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
 
@@ -320,7 +324,41 @@ const createDirectConversation = async (req, res) => {
   }
 };
 
+/**
+ * DELETE /api/conversations/:id
+ * Admin only, and only for a chat whose members are ALL test accounts. This
+ * exists so the automated tests can clear the group chats they create; a chat
+ * with any real person in it can never be deleted here.
+ */
+const deleteConversation = async (req, res) => {
+  const { id } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ message: "Invalid conversation id" });
+  }
+  try {
+    const conversation = await Conversation.findById(id);
+    if (!conversation) return res.status(404).json({ message: "Conversation not found" });
+
+    const members = await User.find({ _id: { $in: conversation.memberIds } }, "isTestAccount").lean();
+    if (members.length === 0 || members.some((m) => !m.isTestAccount)) {
+      return res.status(403).json({ message: "Only test chats can be deleted." });
+    }
+
+    const photos = await Message.find({ conversationId: conversation._id, imageId: { $ne: null } }, "imageId").lean();
+    photos.forEach((p) => getBucket().delete(p.imageId).catch(() => {}));
+    await Message.deleteMany({ conversationId: conversation._id });
+    await ChatRoomState.deleteMany({ roomKey: `conv:${conversation._id}` });
+    await ChatRoomSettings.deleteMany({ roomKey: `conv:${conversation._id}` });
+    await conversation.deleteOne();
+    return res.status(204).end();
+  } catch (err) {
+    console.error("Delete conversation error:", err);
+    return res.status(500).json({ message: "Failed to delete the conversation" });
+  }
+};
+
 module.exports = {
+  deleteConversation,
   createConversation,
   listMyConversations,
   getConversationMessages,

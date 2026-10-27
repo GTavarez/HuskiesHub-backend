@@ -15,6 +15,7 @@ router.post("/direct", auth, controller.createDirectConversation);
 
 router.get("/:id/messages", auth, controller.getConversationMessages);
 router.patch("/:id", auth, controller.renameConversation);
+router.delete("/:id", auth, requireRole("admin"), controller.deleteConversation);
 router.post("/:id/members", auth, controller.addMembers);
 router.delete("/:id/members/:userId", auth, controller.removeMember);
 
