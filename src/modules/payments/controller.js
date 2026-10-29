@@ -14,6 +14,7 @@ const { canAccessPlayer } = require("../../common/utils/ownership");
 const { getTransporter } = require("../../common/utils/mailer");
 const { pushToUsers } = require("../chat/pushService");
 const { formatAutopaySummary } = require("./autopaySummary");
+const { formatCeSignup } = require("./ceSignup");
 
 const TYPES_REQUIRING_REGISTRATION = ["registration", "deposit", "partialRegistration"];
 const TYPES_REQUIRING_PRODUCT = ["camp", "lesson", "apparel"];
@@ -428,6 +429,33 @@ async function handleFallWinterPaymentLinkCompleted(session) {
   await sendFallWinterConfirmationEmail(user, player);
 }
 
+// Competitive Edge winter training sells through standalone Payment Links (no
+// account or registration in the app), so all we do is tell the coaches who
+// signed up, with the parent's contact details, as each payment lands.
+async function handleCeWinterSignupCompleted(session) {
+  if (session.payment_status === "unpaid") return;
+
+  let quantity = 1;
+  try {
+    const items = await getStripeClient().checkout.sessions.listLineItems(session.id, { limit: 5 });
+    quantity = items.data[0]?.quantity || 1;
+  } catch (err) {
+    console.warn("Winter signup quantity not read:", err.message);
+  }
+
+  try {
+    const { subject, text } = formatCeSignup(session, quantity);
+    const recipients = (process.env.CE_SIGNUP_ALERT_EMAILS || "cesportstraining@gmail.com")
+      .split(",")
+      .map((e) => e.trim())
+      .filter(Boolean);
+    const fromEmail = process.env.CONTACT_FROM_EMAIL || process.env.SMTP_USER;
+    await getTransporter().sendMail({ from: fromEmail, to: recipients, subject, text });
+  } catch (err) {
+    console.warn("Winter signup email not sent:", err.message);
+  }
+}
+
 // ---- Webhook event handling -------------------------------------------
 // Stripe is the source of truth: these handlers only ever update Payment
 // status/fields in response to a verified event, never optimistically from
@@ -470,6 +498,8 @@ async function handleCheckoutSessionCompleted(session) {
     // metadata set on the Payment Link itself.
     if (session.metadata?.linkType === "fallWinterRegistration") {
       await handleFallWinterPaymentLinkCompleted(session);
+    } else if (session.metadata?.linkType === "ceWinterSignup") {
+      await handleCeWinterSignupCompleted(session);
     }
     return;
   }
