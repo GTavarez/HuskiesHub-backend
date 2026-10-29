@@ -36,6 +36,7 @@ const hotelReservationsRoutes = require("./src/modules/tournaments/hotelRoutes")
 const payrollRoutes = require("./src/modules/payroll/routes");
 const lessonSlotsRoutes = require("./src/modules/lesson-slots/routes");
 const lessonRequestsRoutes = require("./src/modules/lesson-requests/routes");
+const tryoutsRoutes = require("./src/modules/tryouts/routes");
 const analyticsRoutes = require("./src/modules/analytics/routes");
 const aiAssistantRoutes = require("./src/modules/ai-assistant/routes");
 const notificationsRoutes = require("./src/modules/notifications/routes");
@@ -107,6 +108,7 @@ app.use((req, res, next) => {
 app.use("/api", scheduleRoutes); // ✅ gives you GET /api/schedule
 app.use("/", mediaRoutes); // owns POST /admin, POST/GET /images*, GET /api/uploads/:id
 app.use("/api/contact", contactRoutes);
+app.use("/api/tryouts", tryoutsRoutes);
 app.use("/", usersRoutes); // /signup, /signin, /me
 app.use("/api/messages", messagesRoutes);
 app.use("/api/conversations", conversationsRoutes);
