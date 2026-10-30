@@ -15,6 +15,7 @@ const { getTransporter } = require("../../common/utils/mailer");
 const { pushToUsers } = require("../chat/pushService");
 const { formatAutopaySummary } = require("./autopaySummary");
 const { formatCeSignup } = require("./ceSignup");
+const { refundUpdate } = require("./refundUpdate");
 
 const TYPES_REQUIRING_REGISTRATION = ["registration", "deposit", "partialRegistration"];
 const TYPES_REQUIRING_PRODUCT = ["camp", "lesson", "apparel"];
@@ -582,14 +583,17 @@ async function handlePaymentIntentFailed(paymentIntent) {
   await payment.save();
 }
 
-async function handleChargeRefunded(charge) {
+async function handleChargeRefunded(charge, eventCreated) {
   const payment = await Payment.findOne({ stripePaymentIntentId: charge.payment_intent });
   if (!payment) return;
-  payment.refundedAmountCents = charge.amount_refunded;
-  payment.refundedAt = new Date();
-  // Only a full refund closes the payment. A partial one leaves it open so the
-  // rest can still be refunded later.
-  payment.status = charge.amount_refunded >= payment.amountCents ? "refunded" : "succeeded";
+  const update = refundUpdate({
+    amountRefundedCents: charge.amount_refunded,
+    amountCents: payment.amountCents,
+    eventCreated,
+    current: payment,
+  });
+  if (!update) return;
+  Object.assign(payment, update);
   await payment.save();
 }
 
@@ -600,7 +604,7 @@ const EVENT_HANDLERS = {
     handlePaymentIntentSucceeded(event.data.object),
   "payment_intent.payment_failed": (event) =>
     handlePaymentIntentFailed(event.data.object),
-  "charge.refunded": (event) => handleChargeRefunded(event.data.object),
+  "charge.refunded": (event) => handleChargeRefunded(event.data.object, event.created),
 };
 
 // Called by webhookRoutes.js after signature verification. Guards against
